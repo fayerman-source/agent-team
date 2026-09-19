@@ -12,8 +12,10 @@ address is configured, so installing the plugin never changes sessions
 that are not part of a team. The address is read, in order:
 1. the REVIEWER_ADDRESS environment variable
 2. a "reviewerAddress" key (top level or under "agentTeam") in the
-   project's .claude/settings.local.json, then .claude/settings.json,
-   then settings.json at the plugin root
+   project's .claude/settings.local.json, then .claude/settings.json
+There is deliberately no plugin-level fallback: the plugin root is
+shared by every session using the install, which would defeat the
+per-session opt-in.
 The reviewer itself leaves it unset, so it is never told to report to
 itself.
 """
@@ -34,9 +36,6 @@ def find_reviewer_address():
     if project_dir:
         candidates.append(os.path.join(project_dir, ".claude", "settings.local.json"))
         candidates.append(os.path.join(project_dir, ".claude", "settings.json"))
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if plugin_root:
-        candidates.append(os.path.join(plugin_root, "settings.json"))
 
     for path in candidates:
         try:
