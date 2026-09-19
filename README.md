@@ -205,45 +205,44 @@ relayed secondhand, per rule 8).
 ## Roles
 
 ```
-                 founder (human)
-                       |
-      approves milestones, deploys, irreversible calls
-                       |
-                       v
+                   founder (human)
+                          |
+  approves milestones, deploys, irreversible calls
+                          |
+                          v
    +---------------------------------------------+
    |                   reviewer                  |
    |  plans tickets, writes design notes,        |
    |  rules on reports, never builds             |
    +---------------------------------------------+
-                       |
+                          |
               tickets, rulings, briefs
-                       v
+                          v
    +---------------------------------------------+
    |                 coordinator                 |
    |  briefs builders, verifies reports against  |
    |  GitHub, merges when the gate holds         |
    +---------------------------------------------+
-                       |
-            brief: ticket, branch, worktree
-                       v
-        +--------------+--------------+
-        v                             v
-  +-----------+                 +-----------+
-  |  builder  |       ...       |  builder  |
-  |  (ticket  |                 |  (ticket  |
-  |   A, own  |                 |   B, own  |
-  |  worktree)|                 |  worktree)|
-  +-----------+                 +-----------+
-        |                             |
-        v                             v
-   push + open PR                push + open PR
-        |                             |
-        v                             v
-  +---------------------------------------------+
-  |  review bot, per push or on request         |
-  |  (+ optional read-only second reviewers,    |
-  |  each on its own clone)                     |
-  +---------------------------------------------+
+                          |
+    brief: ticket, branch, worktree, bot profile
+                          v
+            +-------------+-------------+
+            v                           v
+      +-----------+               +-----------+
+      |  builder  |      ...      |  builder  |
+      | ticket A, |               | ticket B, |
+      | own tree  |               | own tree  |
+      +-----------+               +-----------+
+            |                           |
+            v                           v
+     push + open PR              push + open PR
+            |                           |
+            v                           v
+   +---------------------------------------------+
+   |  review bot: reviews some heads by itself,  |
+   |  others on request (+ optional read-only    |
+   |  second reviewers, each on its own clone)   |
+   +---------------------------------------------+
 ```
 
 ## The 31 lessons

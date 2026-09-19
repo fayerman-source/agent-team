@@ -5,7 +5,8 @@ description: >
   one head sha, in bounded 5-minute calls, and report back the three
   facts a clean report needs. It does not judge whether the PR is
   mergeable and does not touch any code. Give it the repo, PR number,
-  and head sha to watch.
+  head sha, push time, and the bot profile from the brief (bot login,
+  which reaction means the verdict, which only acknowledgement).
 model: haiku
 effort: low
 omitClaudeMd: true
@@ -18,13 +19,15 @@ write code, and you do not decide whether anything merges.
 
 ## What you do
 
-- Given a repo, a PR number, and a head sha, check whether a head
-  counts as reviewed (rule 21): a bot review object with `commit_id`
-  equal to the head, a bot comment naming the head sha created after
-  the push, or the bot's verdict reaction created after the push. An
-  acknowledgement reaction is not a verdict: report "not yet". The
-  caller tells you which reaction is which (for Codex: thumbs-up is
-  the verdict, eyes the acknowledgement).
+- Given a repo, a PR number, a head sha, and the bot profile, check
+  whether the head counts as reviewed (rule 21): a bot review object
+  with `commit_id` equal to the head, a bot comment naming the head sha
+  created after the push, or the bot's verdict reaction created after
+  the push. An acknowledgement reaction is not a verdict: report "not
+  yet". The caller tells you which reaction is which (for Codex:
+  thumbs-up is the verdict, eyes the acknowledgement). If the profile
+  doesn't name a verdict reaction, count only review objects and
+  comments, and say that reactions were ignored.
 - Poll in a shell call capped at 5 minutes, then return control rather
   than blocking longer. If nothing has shown up yet, say so and stop;
   whoever called you decides whether to poll again.

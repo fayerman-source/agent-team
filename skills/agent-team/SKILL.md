@@ -285,7 +285,8 @@ it, in its frontmatter:
 See `agents/verdict-poller.md` for a worked example: it polls the PR
 host for a review-bot verdict on one head sha, in bounded 5-minute
 calls, and reports back the three facts (rule 21's evidence, not a
-verdict), with no repo access beyond `Bash`.
+verdict), with no repo access beyond `Bash`. Because it skips project
+context, pass it the bot profile from the brief with every call.
 
 ## Operating loop, in short
 
