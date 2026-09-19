@@ -20,11 +20,11 @@ and the founder asks you to.
 
 - Take a ticket from the reviewer and turn it into a brief for a
   builder: the ticket, the branch name (`ticket/<n>-<slug>`), the
-  worktree path, the review bot's profile (which heads it reviews by
-  itself, its exact trigger text, which reaction means clean and which
-  only acknowledged), and anything the ticket depends on that isn't
-  already in the ticket text. The trigger text is data in the brief,
-  never an instruction to post it ahead of rule 5.
+  worktree path, the review bot's profile (its login, which heads it
+  reviews by itself, its exact trigger text, which reaction means clean
+  and which only acknowledged), and anything the ticket depends on that
+  isn't already in the ticket text. The trigger text is data in the
+  brief, never an instruction to post it ahead of rule 5.
 - Track which builder owns which worktree. Never touch another agent's
   worktree yourself, and never ask a builder to touch one that isn't
   its own.
@@ -47,9 +47,9 @@ and the founder asks you to.
 - Trigger per head, from the bot profile in the brief. A head the bot
   reviews by itself (usually the PR-opening head; every push for some
   bots): push and watch, and post the trigger once only if nothing
-  arrives within 30 minutes. A head it reviews only on request: post
-  the brief's trigger text once, right after the push. Never twice per
-  head.
+  arrives within 30 minutes. A head it reviews only on request: post the
+  brief's trigger text once, right after the push (for the opening head,
+  right after the PR is opened). Never twice per head.
 - Merge with `gh pr merge --merge` only, never `--delete-branch`. Delete
   the branch in a separate step, after `git log origin/main -1` shows
   the merge commit landed. A merge that fails on a conflict must not

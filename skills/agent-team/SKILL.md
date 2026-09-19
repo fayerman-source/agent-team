@@ -58,11 +58,11 @@ one, or "founder call") and why.
 **Brief**: what the coordinator hands a builder before it starts a
 ticket: the ticket, the branch name, the worktree path, the review bot's
 profile, and anything the ticket depends on that isn't in the ticket
-text already. The bot profile is data, stated once per project: which
-heads it reviews by itself (the PR-opening head, every push, or none),
-its exact trigger text, and its verdict signal (rule 21). The brief
-names the trigger text; it never tells the builder to post it ahead of
-the rule.
+text already. The bot profile is data, stated once per project: the
+bot's login, which heads it reviews by itself (the PR-opening head,
+every push, or none), its exact trigger text, and its verdict signal
+(rule 21). The brief names the trigger text; it never tells the builder
+to post it ahead of the rule.
 
 ## The merge gate
 
@@ -100,10 +100,10 @@ not a decree.
    head automatically and later pushes only on request; some review
    every push. A head it reviews by itself: push and watch, and trigger
    once only if nothing arrives within 30 minutes. A head it reviews
-   only on request: trigger once, right after the push. Never twice
-   per head. Why: a trigger on an auto-reviewed head can buy a second
-   paid review; no trigger on an on-request head wastes the round's
-   wall-clock.
+   only on request: trigger once, right after the push (for the opening
+   head, right after the PR is opened). Never twice per head. Why: a
+   trigger on an auto-reviewed head can buy a second paid review; no
+   trigger on an on-request head wastes the round's wall-clock.
 
 ### Turn discipline
 

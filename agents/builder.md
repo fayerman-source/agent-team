@@ -33,9 +33,9 @@ feature branch and worktree, and you never merge your own PR.
 - Trigger per head, from the bot profile in the brief. A head the bot
   reviews by itself (usually the PR-opening head; every push for some
   bots): push and watch, and post the trigger once only if nothing
-  arrives within 30 minutes. A head it reviews only on request: post
-  the brief's trigger text once, right after the push. Never twice per
-  head.
+  arrives within 30 minutes. A head it reviews only on request: post the
+  brief's trigger text once, right after the push (for the opening head,
+  right after the PR is opened). Never twice per head.
 - Answer repeated findings on code you already fixed by naming the
   fixing commit and test in-thread, then resolve the thread. Answer
   out-of-scope design questions as "pre-existing, filed as a leftover"
