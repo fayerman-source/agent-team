@@ -2,29 +2,59 @@
 
 ![A violet reviewer prism above an amber coordinator hub, routing work to three builders on separate platforms whose branch lines converge at a glowing merge gate](assets/hero.jpg)
 
-A Claude Code plugin that packages a working method for running several
-Claude Code sessions as a small dev team on one codebase: a
-planner-reviewer, a coordinator, and one or more builders. It is process
-only, no domain content. It ships:
+Run several Claude Code sessions as a small dev team on one codebase: a
+reviewer that plans and rules, a coordinator that briefs and merges, and
+builders that each ship one ticket on their own branch. Every rule in it
+came from something that went wrong in a real multi-session project.
+
+**The problem it solves.** One Claude session is easy to supervise. Four
+are not: they go quiet after pushing, merge on a peer's word, trample
+each other's worktrees, and burn review rounds on piecemeal pushes. This
+plugin gives each session a role, a message format, a merge gate, and a
+hook that stops a team session from ending a turn without saying where
+it stands.
+
+It is process only: no domain content, no project code. It ships:
 
 - a skill (`agent-team`) with the roles, message formats, merge gate,
-  and the rules below
-- two agent definitions (`coordinator`, `builder`) for spawning those
-  roles as subagents or separate sessions
-- a `/state` command that produces the state report the method requires
-- a Stop hook that blocks a turn from ending silently until it carries a
-  `STATE:` report
+  and the 31 rules below
+- three agent definitions: `coordinator`, `builder`, and a small
+  `verdict-poller` helper
+- `/state` (write a state report) and `/papercut` (log a tooling
+  problem) commands
+- an opt-in Stop hook that blocks a team session from ending a turn
+  until its last message carries a `STATE:` report
+
+## One cycle, end to end
+
+```
+reviewer     writes ticket 12, rules on design questions
+coordinator  briefs a builder: ticket 12, branch ticket/12-slug, worktree ../repo-12
+builder      builds, pushes once, opens the PR, waits for the review bot
+builder      STATE: ticket-12 PR#34 9f3c2a1 done=pushed fixes waiting=bot verdict
+builder      clean report: head sha, review URL after the push, 0 unresolved threads
+coordinator  re-checks all three against GitHub, merges with gh pr merge --merge
+founder      deploys
+```
+
+## Requirements
+
+- Claude Code with plugin support, and messaging between sessions
+  (sessions send each other messages by name or socket address)
+- `git` with worktrees, and the GitHub CLI (`gh`), authenticated
+- a GitHub repo where PRs get an automated review bot on every push
+  (any bot works; rule 21 covers how to detect its verdict)
+- Python 3 for the Stop hook
 
 ## Install
 
 This repo carries its own `.claude-plugin/marketplace.json` (name
-`agent-team-marketplace`, one entry pointing at `./`), so it installs
-as its own marketplace.
+`agent-team-marketplace`), so it installs as its own marketplace.
 
 **From GitHub**:
 
 ```
-/plugin marketplace add <owner>/agent-team
+/plugin marketplace add fayerman-source/agent-team
 /plugin install agent-team@agent-team-marketplace
 ```
 
@@ -35,23 +65,45 @@ as its own marketplace.
 /plugin install agent-team@agent-team-marketplace
 ```
 
-**One session only, no install**: point Claude Code at the directory:
+**One session only, no install**:
 
 ```bash
 claude --plugin-dir <path-to>/agent-team
 ```
 
-(Syntax checked against the Claude Code plugin docs, September 2026:
-`/plugin marketplace add` takes a GitHub `owner/repo` or a local
-directory containing `.claude-plugin/marketplace.json`, and
-`/plugin install <plugin>@<marketplace>` installs a plugin it lists. See
-https://code.claude.com/docs/en/discover-plugins and
-https://code.claude.com/docs/en/plugins if this drifts.)
+Installing does not change sessions that aren't part of a team: the
+Stop hook stays inactive until you give a session a reviewer address
+(see Configuration). Syntax checked against the Claude Code plugin docs
+(https://code.claude.com/docs/en/discover-plugins), September 2026.
 
-Nothing here modifies `~/.claude` on its own. Installing is a step the
-founder takes deliberately, in whichever session should carry the role.
+## Configuration
 
-## Setting up the team (for the human)
+The Stop hook is opt-in per session. It does nothing unless it finds a
+reviewer address, read in this order:
+
+1. the `REVIEWER_ADDRESS` environment variable
+2. a `reviewerAddress` key (top level, or under `agentTeam`) in the
+   project's `.claude/settings.local.json`
+3. the same key in the project's `.claude/settings.json`
+
+Set it in the coordinator's and each builder's session, never the
+reviewer's. The simplest way is at launch:
+
+```bash
+REVIEWER_ADDRESS=<reviewer-session-name> claude
+```
+
+Or per worktree, in `.claude/settings.local.json` (not committed, so it
+won't reach the reviewer's checkout):
+
+```json
+{ "agentTeam": { "reviewerAddress": "<reviewer-session-name>" } }
+```
+
+Avoid the shared `.claude/settings.json` for this: every checkout that
+commits it, the reviewer's included, would turn the hook on.
+
+## Setting up the team
 
 **Terminals.** One session per terminal, each in its own directory.
 Never run two sessions in one directory. The reviewer runs in the main
@@ -73,23 +125,15 @@ second clone/worktree -- coordinator
 makes the calls and should spend the fewest tokens doing it. The
 coordinator runs on a strong general model. Builders run on a cheaper,
 fast model. Set this per session with the model flag or `/model`.
-Subagents never inherit a model by default: always pass one explicitly.
+Always pass subagents an explicit model rather than relying on a default.
 
-**Spreading load across accounts.** Claude Code keeps its state under
-`CLAUDE_CONFIG_DIR`, so a second account can run on the same machine:
-
-```
-CLAUDE_CONFIG_DIR=$HOME/.claude-second claude
-```
-
-(log in once there). Sessions on different accounts can still message
-each other, but listing agents only shows sessions on the same account,
-so address the other account's session by its socket:
+**Addressing sessions.** Sessions message each other by name where the
+name resolves. A session running under a different `CLAUDE_CONFIG_DIR`
+doesn't appear in agent listings, so address it by its socket,
 `uds:/run/user/<uid>/cc-socks/<pid>.sock`. Find the pid with
-`pgrep -af "^claude"` and confirm its `CLAUDE_CONFIG_DIR` by reading
-`/proc/<pid>/environ`. Sockets change on every restart, so re-derive
-them each time. Set `"crossSessionInbound": "accept"` in that account's
-`settings.json` so incoming messages aren't held for approval.
+`pgrep -af "^claude"`. Sockets change on every restart, so re-derive
+them each time. Set `"crossSessionInbound": "accept"` in the receiving
+session's `settings.json` so incoming messages aren't held for approval.
 
 **Permission mode.** Builders and the coordinator run in auto mode
 (cycle with shift+tab). Accept-edits mode is not enough: shell commands
@@ -98,15 +142,9 @@ own: an "enter worktree" tool relocating the permission root (use plain
 `git worktree add` instead, as above) and anything that edits the
 harness's own settings.
 
-**Install this plugin in every account that runs builders**, so the
-Stop hook applies there too. In each builder account, set
-`REVIEWER_ADDRESS` (or the `reviewerAddress` setting) to the reviewer's
-socket or name.
-
-**Usage limits.** Each account has a 5-hour window and a weekly window.
-A session stopped by a limit does not resume itself: type anything into
-its terminal after the reset to continue it. The review bot has its own
-quota, separate from any account's; when it's low, batch fixes per
+**Usage limits.** A session stopped by a usage limit does not resume
+itself: type anything into its terminal after the reset to continue it.
+The review bot usually has its own quota; when it's low, batch fixes per
 round rather than pushing piecemeal (rule 2).
 
 **Review bot.** Bots differ in how they signal a verdict (review
@@ -120,6 +158,21 @@ answer findings. The coordinator merges once the gate holds. The founder
 deploys. Overnight, the founder may grant the reviewer authority for
 everything except deploy, typed into each session directly (never
 relayed secondhand, per rule 8).
+
+## Terms
+
+- **founder**: the human who owns the project; approves milestones,
+  merges without a standing grant, and deploys
+- **head**: the latest commit on a PR's branch; reviews count only if
+  they're on the current head
+- **P1**: a review finding marked highest priority
+- **family sweep**: after fixing a finding, checking the same file or
+  invariant for other instances of the same class of bug before pushing
+- **clean report**: a builder's three facts (head sha, review URL after
+  the push, unresolved thread count), evidence for the coordinator to
+  verify, not a verdict
+- **papercut**: a small tooling or process problem that cost time,
+  logged in `papercuts.md` so nobody has to rediscover the fix
 
 ## Roles
 
@@ -229,9 +282,8 @@ in `skills/agent-team/SKILL.md`.
     re-triggered, wasting a round.
 22. Keep `papercuts.md` at the repo root, shared by all sessions: append
     `date · symptom · fix · where` when a tooling or process problem
-    costs time, and check it first when tooling misbehaves. Three of
-    this week's rules were reconstructed by hand from memory after the
-    fact.
+    costs time, and check it first when tooling misbehaves. Three rules
+    had to be reconstructed by hand from memory after the fact.
 23. A wave of findings gets a cause map before any fix: cause, where the
     rule is enforced today, which findings share it; fix at the shared
     cause, clamp only with proof. Seven complaints came down to three
@@ -265,14 +317,6 @@ in `skills/agent-team/SKILL.md`.
     notice, and never repeat an unconfirmed warning. Filter bot findings
     by author and creation time; hosts re-anchor old comments to the
     newest head.
-
-## Configuration
-
-The Stop hook (`hooks/report-state.py`) needs to know where to send the
-state report. It reads, in order: the `REVIEWER_ADDRESS` environment
-variable, then a `reviewerAddress` key in a reachable `settings.json`.
-Neither is required to run the hook; if both are absent it tells the
-agent to ask for the address rather than guess one.
 
 ## Licence
 

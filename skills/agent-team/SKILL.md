@@ -34,7 +34,8 @@ no domain content, no account names, no socket paths.
 
 ## Message formats
 
-**State report** (what the Stop hook enforces on every turn):
+**State report** (what the Stop hook enforces on every turn of a team
+session, i.e. one with a reviewer address configured):
 ```
 STATE: <ticket> <PR#> <head-sha> done=<what's done> waiting=<what it's blocked on>
 ```
@@ -180,7 +181,7 @@ not a decree.
 22. **Keep `papercuts.md` at the repo root, shared by all sessions.**
     When a session loses time to a tooling or process problem mid-work,
     it appends `date · symptom · fix · where`, and checks that file
-    first when tooling misbehaves. Why: three of this week's rules were
+    first when tooling misbehaves. Why: three of the rules above were
     reconstructed by hand from memory after the fact; the agents that
     hit them could have written them down at once.
 
