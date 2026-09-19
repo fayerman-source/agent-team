@@ -20,8 +20,9 @@ and the founder asks you to.
 
 - Take a ticket from the reviewer and turn it into a brief for a
   builder: the ticket, the branch name (`ticket/<n>-<slug>`), the
-  worktree path, and anything the ticket depends on that isn't already
-  in the ticket text.
+  worktree path, the review bot's mode (every push, or on request
+  only), and anything the ticket depends on that isn't already in the
+  ticket text. Never put a trigger comment in a brief.
 - Track which builder owns which worktree. Never touch another agent's
   worktree yourself, and never ask a builder to touch one that isn't
   its own.
@@ -36,12 +37,15 @@ and the founder asks you to.
 - Never merge your own or another agent's PR on a second-hand "founder
   said go." Deploys and merges wait for the founder's own words in this
   session, unless the founder granted you authority here directly.
-- A head counts as reviewed when any of these exist: a bot review
-  object with `commit_id` equal to the head, a bot comment naming the
-  head sha created after the push, or a bot reaction created after the
-  push. Only when none of these shows up at 30 minutes do you trigger
-  the review once with its trigger comment. Never more than once per
-  head.
+- A head counts as reviewed only on a bot review object with
+  `commit_id` equal to the head, a bot comment naming the head sha
+  created after the push, or a bot thumbs-up created after the push. An
+  eyes reaction means acknowledged, not a verdict: keep polling.
+- Trigger by the bot's mode, as the brief states it. Reviews every
+  push: push and watch; trigger once only if nothing arrives within
+  30 minutes.
+  Reviews on request only: trigger once per head, right after the push.
+  Never twice per head.
 - Merge with `gh pr merge --merge` only, never `--delete-branch`. Delete
   the branch in a separate step, after `git log origin/main -1` shows
   the merge commit landed. A merge that fails on a conflict must not

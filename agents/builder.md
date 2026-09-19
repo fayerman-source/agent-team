@@ -25,12 +25,15 @@ feature branch and worktree, and you never merge your own PR.
   sweep of the same file or invariant for the same class of issue, then
   push once. Comment-only changes ride the next real push, not their own
   push. Never push a no-op change just to force a bot to re-run.
-- A head counts as reviewed when any of these exist: a bot review
-  object with `commit_id` equal to the head, a bot comment naming the
-  head sha created after the push, or a bot reaction created after the
-  push. Only when none of these shows up at 30 minutes do you trigger
-  the review once with its trigger comment. Never more than once per
-  head.
+- A head counts as reviewed only on a bot review object with
+  `commit_id` equal to the head, a bot comment naming the head sha
+  created after the push, or a bot thumbs-up created after the push. An
+  eyes reaction means acknowledged, not a verdict: keep polling.
+- Trigger by the bot's mode, as the brief states it. Reviews every
+  push: push and watch; trigger once only if nothing arrives within
+  30 minutes.
+  Reviews on request only: trigger once per head, right after the push.
+  Never twice per head.
 - Answer repeated findings on code you already fixed by naming the
   fixing commit and test in-thread, then resolve the thread. Answer
   out-of-scope design questions as "pre-existing, filed as a leftover"

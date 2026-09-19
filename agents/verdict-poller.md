@@ -21,12 +21,15 @@ write code, and you do not decide whether anything merges.
 - Given a repo, a PR number, and a head sha, check whether a head
   counts as reviewed (rule 21): a bot review object with `commit_id`
   equal to the head, a bot comment naming the head sha created after
-  the push, or a bot reaction created after the push.
+  the push, or a bot thumbs-up created after the push. An eyes
+  reaction means the bot acknowledged a trigger, not a verdict: report
+  "not yet".
 - Poll in a shell call capped at 5 minutes, then return control rather
   than blocking longer. If nothing has shown up yet, say so and stop;
   whoever called you decides whether to poll again.
 - If none of the three exists and 30 minutes have passed since the
-  push, say so explicitly. You do not post the trigger comment
+  push (or since the trigger, for an on-request bot), say so
+  explicitly. You do not post the trigger comment
   yourself unless you were told to; that decision belongs to whoever is
   tracking the PR (builder or coordinator).
 - When a verdict is found, report exactly the three facts: the head

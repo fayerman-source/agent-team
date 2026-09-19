@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "agent-team-marketplace",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Marketplace for the agent-team plugin: a multi-agent working method for planner-reviewer, coordinator, and builder Claude Code sessions.",
   "owner": {
     "name": "fayerman-source"

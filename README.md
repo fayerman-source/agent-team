@@ -169,9 +169,12 @@ itself: type anything into its terminal after the reset to continue it.
 The review bot usually has its own quota; when it's low, batch fixes per
 round rather than pushing piecemeal (rule 2).
 
-**Review bot.** Bots differ in how they signal a verdict (review
-object, comment, reaction); check which yours uses before writing the
-poll (rule 21).
+**Review bot.** Find out two things before the first brief. Its mode:
+does it review every push, or only on request (a trigger comment such as
+`@codex review`)? The brief states the mode, and the trigger follows
+from it (rule 5). And how it signals a verdict: a review object, a
+comment naming the sha, or a thumbs-up. An eyes reaction only means it
+picked up a trigger (rule 21).
 
 **Daily rhythm.** The founder gives the reviewer the current state (main
 tip, open PRs, who is on what ticket). The reviewer rules on anything
@@ -255,8 +258,10 @@ in `skills/agent-team/SKILL.md`.
    the PR directly.
 4. Answer repeated findings in-thread naming the fixing commit; never
    push a no-op to force a bot re-run.
-5. Trigger a stalled review once after 30 minutes, never more than once
-   per head.
+5. The brief states the bot's mode. Reviews every push: push and
+   watch; trigger once only if nothing arrives within 30 minutes.
+   Reviews on request only: trigger once per head, right after the push. A stray
+   trigger can buy a second paid review; a missing one wastes the round.
 6. Never end a turn while a verdict is pending; wait in bounded 5-minute
    calls, never one unbounded loop. An unbounded loop blocked an
    inbound message until the founder pressed escape.
@@ -297,9 +302,9 @@ in `skills/agent-team/SKILL.md`.
     remaining prose findings "design note; addressed at build" and
     merge on the coordinator's own check. A docs PR took five heads and
     sixteen prose findings without converging.
-21. A head counts as reviewed on a bot review object, a bot comment
-    naming the head sha, or a bot reaction, whichever arrives after the
-    push; trigger only when none of these shows up by 30 minutes. A
+21. A head counts as reviewed only on a bot review object on that sha,
+    a bot comment naming that sha, or a bot thumbs-up created after the
+    push. An eyes reaction is an acknowledgement, not a verdict. A
     clean verdict that arrived as a plain comment was missed and
     re-triggered, wasting a round.
 22. Keep `papercuts.md` at the repo root, shared by all sessions: append

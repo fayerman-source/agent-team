@@ -55,8 +55,9 @@ short and decisive, stating what governs (an existing principle, a new
 one, or "founder call") and why.
 
 **Brief**: what the coordinator hands a builder before it starts a
-ticket: the ticket, the branch name, the worktree path, and anything the
-ticket depends on that isn't in the ticket text already.
+ticket: the ticket, the branch name, the worktree path, the review bot's
+mode (reviews every push, or on request only; see rule 5), and anything
+the ticket depends on that isn't in the ticket text already.
 
 ## The merge gate
 
@@ -89,9 +90,12 @@ not a decree.
    test, then resolved. An out-of-scope design question is answered
    "pre-existing, filed as a leftover" and recorded in the plan. Never
    push a no-op change just to make a bot re-run.
-5. **Trigger a stalled review once.** If the review bot hasn't reviewed
-   a pushed head within 30 minutes, trigger it once with its trigger
-   comment. Never more than once per head.
+5. **The brief states the bot's mode; the trigger follows from it.**
+   Reviews every push: push and watch; trigger once only if nothing
+   arrives within 30 minutes. Reviews on request only: trigger once per
+   head, right after the push, never twice. Why:
+   a trigger on an auto-reviewed head can buy a second paid review; no
+   trigger on an on-request bot wastes the round's wall-clock.
 
 ### Turn discipline
 
@@ -167,11 +171,12 @@ not a decree.
 
 ### Review verdict detection
 
-21. **A head counts as reviewed when any of these exist**: a bot review
+21. **A head counts as reviewed only on one of these**: a bot review
     object with `commit_id` equal to the head; a bot issue comment on
-    the PR naming the head sha, created after the push; a bot reaction
-    (e.g. thumbs-up) created after the push. Only when none of these
-    exists at 30 minutes is the trigger comment posted, once. Why: the
+    the PR naming the head sha, created after the push; a bot thumbs-up
+    created after the push. An eyes reaction means the bot acknowledged
+    a trigger, not that it reached a verdict; keep polling. When to
+    trigger at all depends on the bot's mode (rule 5). Why: the
     bot's clean verdict arrived as a plain PR comment, the check only
     looked at review objects, and a clean PR was re-triggered, wasting a
     round.
