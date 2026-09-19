@@ -30,12 +30,18 @@ It is process only: no domain content, no project code. It ships:
 ```
 reviewer     writes ticket 12, rules on design questions
 coordinator  briefs a builder: ticket 12, branch ticket/12-slug, worktree ../repo-12
-builder      builds, pushes once, opens the PR, waits for the review bot
-builder      STATE: ticket-12 PR#34 9f3c2a1 done=pushed fixes waiting=bot verdict
+builder      builds, pushes once, opens the PR
+builder      polls for the bot's verdict in 5-minute calls, inside the same turn
+builder      fixes every finding in one push, polls again until the head is clean
 builder      clean report: head sha, review URL after the push, 0 unresolved threads
+builder      STATE: ticket-12 PR#34 9f3c2a1 done=review clean waiting=coordinator merge
 coordinator  re-checks all three against GitHub, merges with gh pr merge --merge
 founder      deploys
 ```
+
+A builder never ends its turn while a verdict is pending (rule 6). The
+Stop hook only checks that a `STATE:` line exists, so keeping the poll
+running is on the builder.
 
 ## Requirements
 
