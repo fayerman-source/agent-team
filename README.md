@@ -48,8 +48,9 @@ running is on the builder.
 - Claude Code with plugin support, and messaging between sessions
   (sessions send each other messages by name or socket address)
 - `git` with worktrees, and the GitHub CLI (`gh`), authenticated
-- a GitHub repo where PRs get an automated review bot on every push
-  (any bot works; rule 21 covers how to detect its verdict)
+- a GitHub repo where PRs get an automated review bot (any bot works
+  once you know its profile: its login, which heads it reviews by
+  itself, its trigger text, its verdict signal; see Review bot below)
 - Python 3 for the Stop hook
 
 ## Install
@@ -169,9 +170,14 @@ itself: type anything into its terminal after the reset to continue it.
 The review bot usually has its own quota; when it's low, batch fixes per
 round rather than pushing piecemeal (rule 2).
 
-**Review bot.** Bots differ in how they signal a verdict (review
-object, comment, reaction); check which yours uses before writing the
-poll (rule 21).
+**Review bot.** Before the first brief, write down the bot's profile and
+put it in every brief: its login, which heads it reviews by itself (the
+PR-opening head, every push, or none), its exact trigger text, and its
+verdict signal (which reaction means "reviewed, clean" and which only
+means "picked up the trigger"). Rules 5 and 21 act on it. Codex on
+GitHub, for example: reviews the PR-opening head by itself, later pushes
+only on `@codex review`, reacts eyes when it picks up a trigger, and
+thumbs-up when it finds nothing.
 
 **Daily rhythm.** The founder gives the reviewer the current state (main
 tip, open PRs, who is on what ticket). The reviewer rules on anything
@@ -199,45 +205,44 @@ relayed secondhand, per rule 8).
 ## Roles
 
 ```
-                 founder (human)
-                       |
-      approves milestones, deploys, irreversible calls
-                       |
-                       v
+                   founder (human)
+                          |
+  approves milestones, deploys, irreversible calls
+                          |
+                          v
    +---------------------------------------------+
-   |                 reviewer                     |
-   |  plans tickets, writes design notes,          |
-   |  rules on reports, never builds               |
+   |                   reviewer                  |
+   |  plans tickets, writes design notes,        |
+   |  rules on reports, never builds             |
    +---------------------------------------------+
-                       |
+                          |
               tickets, rulings, briefs
-                       v
+                          v
    +---------------------------------------------+
-   |               coordinator                    |
-   |  briefs builders, verifies reports against    |
-   |  GitHub, merges when the gate holds           |
+   |                 coordinator                 |
+   |  briefs builders, verifies reports against  |
+   |  GitHub, merges when the gate holds         |
    +---------------------------------------------+
-                       |
-            brief: ticket, branch, worktree
-                       v
-        +--------------+--------------+
-        v                             v
-  +-----------+                 +-----------+
-  |  builder  |       ...       |  builder  |
-  |  (ticket  |                 |  (ticket  |
-  |   A, own  |                 |   B, own  |
-  |  worktree)|                 |  worktree)|
-  +-----------+                 +-----------+
-        |                             |
-        v                             v
-   push + open PR                push + open PR
-        |                             |
-        v                             v
-  +---------------------------------------------+
-  |  review bot on every push (+ optional        |
-  |  read-only second reviewers on their own      |
-  |  clone)                                       |
-  +---------------------------------------------+
+                          |
+    brief: ticket, branch, worktree, bot profile
+                          v
+            +-------------+-------------+
+            v                           v
+      +-----------+               +-----------+
+      |  builder  |      ...      |  builder  |
+      | ticket A, |               | ticket B, |
+      | own tree  |               | own tree  |
+      +-----------+               +-----------+
+            |                           |
+            v                           v
+     push + open PR              push + open PR
+            |                           |
+            v                           v
+   +---------------------------------------------+
+   |  review bot: reviews some heads by itself,  |
+   |  others on request (+ optional read-only    |
+   |  second reviewers, each on its own clone)   |
+   +---------------------------------------------+
 ```
 
 ## The 31 lessons
@@ -255,8 +260,12 @@ in `skills/agent-team/SKILL.md`.
    the PR directly.
 4. Answer repeated findings in-thread naming the fixing commit; never
    push a no-op to force a bot re-run.
-5. Trigger a stalled review once after 30 minutes, never more than once
-   per head.
+5. Trigger per head, from the bot profile in the brief. A head the bot
+   reviews by itself (often the PR-opening head): push and watch,
+   trigger once only after 30 minutes of nothing. A head it reviews only
+   on request: trigger once, right after the push (for the opening head,
+   right after the PR is opened). A stray trigger can buy a second paid
+   review; a missing one wastes the round.
 6. Never end a turn while a verdict is pending; wait in bounded 5-minute
    calls, never one unbounded loop. An unbounded loop blocked an
    inbound message until the founder pressed escape.
@@ -297,9 +306,10 @@ in `skills/agent-team/SKILL.md`.
     remaining prose findings "design note; addressed at build" and
     merge on the coordinator's own check. A docs PR took five heads and
     sixteen prose findings without converging.
-21. A head counts as reviewed on a bot review object, a bot comment
-    naming the head sha, or a bot reaction, whichever arrives after the
-    push; trigger only when none of these shows up by 30 minutes. A
+21. A head counts as reviewed only on a bot review object on that sha,
+    a bot comment naming that sha, or the bot's verdict reaction
+    created after the push; an acknowledgement reaction (Codex: eyes)
+    is not a verdict. A
     clean verdict that arrived as a plain comment was missed and
     re-triggered, wasting a round.
 22. Keep `papercuts.md` at the repo root, shared by all sessions: append

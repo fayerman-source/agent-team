@@ -26,8 +26,9 @@ no domain content, no account names, no socket paths.
 - **Builder(s)**. One ticket per feature branch (`ticket/<n>-<slug>`),
   one PR per ticket, one worktree per ticket. Never touches another
   agent's worktree.
-- **Review bot**. Runs on every push (e.g. a CI review bot). Optional
-  second reviewers are read-only, on their own clone.
+- **Review bot**. Reviews some heads by itself (often the PR-opening
+  head, sometimes every push) and others only on request (rule 5).
+  Optional second reviewers are read-only, on their own clone.
 - **Founder** (human). Approves milestones, deploys, anything
   irreversible. Can grant the reviewer overnight authority for
   everything except deploy.
@@ -55,8 +56,13 @@ short and decisive, stating what governs (an existing principle, a new
 one, or "founder call") and why.
 
 **Brief**: what the coordinator hands a builder before it starts a
-ticket: the ticket, the branch name, the worktree path, and anything the
-ticket depends on that isn't in the ticket text already.
+ticket: the ticket, the branch name, the worktree path, the review bot's
+profile, and anything the ticket depends on that isn't in the ticket
+text already. The bot profile is data, stated once per project: the
+bot's login, which heads it reviews by itself (the PR-opening head,
+every push, or none), its exact trigger text, and its verdict signal
+(rule 21). The brief names the trigger text; it never tells the builder
+to post it ahead of the rule.
 
 ## The merge gate
 
@@ -89,9 +95,15 @@ not a decree.
    test, then resolved. An out-of-scope design question is answered
    "pre-existing, filed as a leftover" and recorded in the plan. Never
    push a no-op change just to make a bot re-run.
-5. **Trigger a stalled review once.** If the review bot hasn't reviewed
-   a pushed head within 30 minutes, trigger it once with its trigger
-   comment. Never more than once per head.
+5. **Trigger per head, from the bot profile.** Ask of each head: does
+   the bot review this one by itself? Many bots review the PR-opening
+   head automatically and later pushes only on request; some review
+   every push. A head it reviews by itself: push and watch, and trigger
+   once only if nothing arrives within 30 minutes. A head it reviews
+   only on request: trigger once, right after the push (for the opening
+   head, right after the PR is opened). Never twice per head. Why: a
+   trigger on an auto-reviewed head can buy a second paid review; no
+   trigger on an on-request head wastes the round's wall-clock.
 
 ### Turn discipline
 
@@ -167,14 +179,16 @@ not a decree.
 
 ### Review verdict detection
 
-21. **A head counts as reviewed when any of these exist**: a bot review
+21. **A head counts as reviewed only on one of these**: a bot review
     object with `commit_id` equal to the head; a bot issue comment on
-    the PR naming the head sha, created after the push; a bot reaction
-    (e.g. thumbs-up) created after the push. Only when none of these
-    exists at 30 minutes is the trigger comment posted, once. Why: the
-    bot's clean verdict arrived as a plain PR comment, the check only
-    looked at review objects, and a clean PR was re-triggered, wasting a
-    round.
+    the PR naming the head sha, created after the push; the bot's
+    verdict reaction, as the brief names it, created after the push. An
+    acknowledgement reaction (Codex: eyes, where thumbs-up is its clean
+    verdict) means the bot picked up a trigger, not that it reached a
+    verdict; keep polling. When to trigger at all depends on the bot
+    profile (rule 5). Why: the bot's clean verdict arrived as a plain PR
+    comment, the check only looked at review objects, and a clean PR was
+    re-triggered, wasting a round.
 
 ### Process hygiene (continued)
 
@@ -271,7 +285,8 @@ it, in its frontmatter:
 See `agents/verdict-poller.md` for a worked example: it polls the PR
 host for a review-bot verdict on one head sha, in bounded 5-minute
 calls, and reports back the three facts (rule 21's evidence, not a
-verdict), with no repo access beyond `Bash`.
+verdict), with no repo access beyond `Bash`. Because it skips project
+context, pass it the bot profile from the brief with every call.
 
 ## Operating loop, in short
 
