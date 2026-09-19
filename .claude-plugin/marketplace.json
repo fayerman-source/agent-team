@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "agent-team-marketplace",
+  "version": "0.1.0",
+  "description": "Marketplace for the agent-team plugin: a multi-agent working method for planner-reviewer, coordinator, and builder Claude Code sessions.",
+  "owner": {
+    "name": "fayerman-source"
+  },
+  "plugins": [
+    {
+      "name": "agent-team",
+      "description": "Multi-agent working method for a small dev team of Claude sessions: a planner-reviewer, a coordinator, and one or more builders, with a Stop hook that enforces a state report before any turn ends.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

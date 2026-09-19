@@ -1,0 +1,15 @@
+{
+  "description": "agent-team Stop hook: never end a turn silently, always send a STATE: report first",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/report-state.py"
+          }
+        ]
+      }
+    ]
+  }
+}
