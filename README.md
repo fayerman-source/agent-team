@@ -129,10 +129,20 @@ Always pass subagents an explicit model rather than relying on a default.
 
 **Addressing sessions.** Sessions message each other by name where the
 name resolves. A session running under a different `CLAUDE_CONFIG_DIR`
-doesn't appear in agent listings, so address it by its socket,
-`uds:/run/user/<uid>/cc-socks/<pid>.sock`. Find the pid with
-`pgrep -af "^claude"`. Sockets change on every restart, so re-derive
-them each time. Set `"crossSessionInbound": "accept"` in the receiving
+doesn't appear in agent listings, so address it by its socket (on
+Linux, `uds:/run/user/<uid>/cc-socks/<pid>.sock`). `pgrep -af "^claude"`
+lists the candidate pids, but sessions started with the same arguments
+look identical there, so confirm which one is which from its
+environment:
+
+```bash
+for p in $(pgrep -f "^claude"); do
+  echo "$p $(tr '\0' '\n' < /proc/$p/environ | grep ^CLAUDE_CONFIG_DIR=)"
+done
+```
+
+A pid with no value runs on the default config directory. Sockets change on every restart, so re-derive them each time. Set
+`"crossSessionInbound": "accept"` in the receiving
 session's `settings.json` so incoming messages aren't held for approval.
 
 **Install per config directory.** Plugins don't cross
