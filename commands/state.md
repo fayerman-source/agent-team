@@ -19,9 +19,11 @@ session and echo it as your final text.
 3. Get the real head sha: `git rev-parse HEAD`. Never paste a sha from
    memory or from an earlier point in the turn.
 4. Summarize in one short clause what's done since the last report.
-5. Summarize in one short clause what you're waiting on: a review
-   verdict, a founder decision, nothing (ready to merge), etc. Use the
-   argument above if given.
+5. Summarize in one short clause what you're waiting on: a founder
+   decision, the coordinator's merge, nothing, etc. Use the argument
+   above if given. If a review verdict is still pending on your pushed
+   head, don't report and stop: keep polling in bounded calls until it
+   arrives (rule 6).
 6. Send this to the coordinator/reviewer session's address (see the
    `agent-team` skill for how sessions address each other), and print it
    as your final line in exactly this form:

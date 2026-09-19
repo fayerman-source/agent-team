@@ -7,12 +7,17 @@ the reviewer/coordinator session (ticket, PR, head sha, done, waiting on).
 `stop_hook_active` guards against looping: the second stop in the same
 turn always goes through.
 
-The reviewer's address is never hard-coded. It is read, in order:
+The hook is opt-in per session: it does nothing unless a reviewer
+address is configured, so installing the plugin never changes sessions
+that are not part of a team. The address is read, in order:
 1. the REVIEWER_ADDRESS environment variable
-2. a "reviewerAddress" key in the plugin's settings (settings.json, under
-   this plugin's config, or a project-level .claude/settings.json)
-3. if neither is set, the block message tells the agent to ask for it
-   instead of guessing a socket path or session name.
+2. a "reviewerAddress" key (top level or under "agentTeam") in the
+   project's .claude/settings.local.json, then .claude/settings.json
+There is deliberately no plugin-level fallback: the plugin root is
+shared by every session using the install, which would defeat the
+per-session opt-in.
+The reviewer itself leaves it unset, so it is never told to report to
+itself.
 """
 import json
 import os
@@ -24,15 +29,12 @@ def find_reviewer_address():
     if env_value:
         return env_value
 
-    # Fall back to a "reviewerAddress" key in any settings.json reachable
-    # from the plugin root or the current project, so a team can configure
-    # this once without editing the hook.
+    # Fall back to a "reviewerAddress" key in a settings file, most local
+    # first, so a team can configure this without editing the hook.
     candidates = []
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if plugin_root:
-        candidates.append(os.path.join(plugin_root, "settings.json"))
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if project_dir:
+        candidates.append(os.path.join(project_dir, ".claude", "settings.local.json"))
         candidates.append(os.path.join(project_dir, ".claude", "settings.json"))
 
     for path in candidates:
@@ -59,6 +61,11 @@ except (OSError, json.JSONDecodeError):
 if not isinstance(payload, dict) or payload.get("stop_hook_active"):
     sys.exit(0)
 
+# Not a team session: stay out of the way.
+reviewer_address = find_reviewer_address()
+if not reviewer_address:
+    sys.exit(0)
+
 last_text = ""
 try:
     with open(payload["transcript_path"], encoding="utf-8", errors="replace") as fh:
@@ -79,19 +86,11 @@ except (OSError, KeyError, TypeError, AttributeError):
 if "STATE:" in last_text:
     sys.exit(0)
 
-reviewer_address = find_reviewer_address()
-address_hint = (
-    f"the reviewer session at {reviewer_address}"
-    if reviewer_address
-    else "the reviewer/coordinator session (its address is not configured: "
-    "set REVIEWER_ADDRESS or a reviewerAddress setting, or ask for it before guessing)"
-)
-
 print(json.dumps({
     "decision": "block",
     "reason": (
         "Standing rule: never end a turn silently. Before stopping, send "
-        f"{address_hint} a state report and echo it as your final text, "
+        f"the reviewer session at {reviewer_address} a state report and echo it as your final text, "
         "starting with the line 'STATE:' followed by ticket, PR, head sha from "
         "`git rev-parse HEAD`, what is done, and what you are waiting on. If a "
         "reviewer verdict is pending on a pushed head, do not stop: keep polling "
