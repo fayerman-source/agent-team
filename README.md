@@ -1,5 +1,7 @@
 # agent-team
 
+![A violet reviewer prism above an amber coordinator hub, routing work to three builders on separate platforms whose branch lines converge at a glowing merge gate](assets/hero.jpg)
+
 A Claude Code plugin that packages a working method for running several
 Claude Code sessions as a small dev team on one codebase: a
 planner-reviewer, a coordinator, and one or more builders. It is process
