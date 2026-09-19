@@ -135,6 +135,12 @@ doesn't appear in agent listings, so address it by its socket,
 them each time. Set `"crossSessionInbound": "accept"` in the receiving
 session's `settings.json` so incoming messages aren't held for approval.
 
+**Install per config directory.** Plugins don't cross
+`CLAUDE_CONFIG_DIR` boundaries. Install agent-team (or pass
+`--plugin-dir`) in every config directory that runs a coordinator or
+builder, or the Stop hook never loads there and `REVIEWER_ADDRESS` has
+nothing to act on.
+
 **Permission mode.** Builders and the coordinator run in auto mode
 (cycle with shift+tab). Accept-edits mode is not enough: shell commands
 still prompt in that mode. Two things auto mode never answers on its
