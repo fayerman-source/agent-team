@@ -29,9 +29,9 @@ write code, and you do not decide whether anything merges.
   than blocking longer. If nothing has shown up yet, say so and stop;
   whoever called you decides whether to poll again.
 - If none of the three exists and 30 minutes have passed since the
-  push (or since the trigger, for an on-request bot), say so
-  explicitly. You do not post the trigger comment
-  yourself unless you were told to; that decision belongs to whoever is
+  push (or since the trigger, for a head reviewed only on request),
+  say so explicitly. You do not post the trigger comment yourself
+  unless you were told to; that decision belongs to whoever is
   tracking the PR (builder or coordinator).
 - When a verdict is found, report exactly the three facts: the head
   sha you checked, the review URL (or comment/reaction) with its

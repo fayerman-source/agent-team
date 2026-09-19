@@ -30,11 +30,12 @@ feature branch and worktree, and you never merge your own PR.
   created after the push, or the bot's verdict reaction (as the brief
   names it) created after the push. An acknowledgement reaction is not
   a verdict: keep polling.
-- Trigger by the bot's mode, as the brief states it. Reviews every
-  push: push and watch; trigger once only if nothing arrives within
-  30 minutes.
-  Reviews on request only: trigger once per head, right after the push.
-  Never twice per head.
+- Trigger per head, from the bot profile in the brief. A head the bot
+  reviews by itself (usually the PR-opening head; every push for some
+  bots): push and watch, and post the trigger once only if nothing
+  arrives within 30 minutes. A head it reviews only on request: post
+  the brief's trigger text once, right after the push. Never twice per
+  head.
 - Answer repeated findings on code you already fixed by naming the
   fixing commit and test in-thread, then resolve the thread. Answer
   out-of-scope design questions as "pre-existing, filed as a leftover"

@@ -48,9 +48,9 @@ running is on the builder.
 - Claude Code with plugin support, and messaging between sessions
   (sessions send each other messages by name or socket address)
 - `git` with worktrees, and the GitHub CLI (`gh`), authenticated
-- a GitHub repo where PRs get an automated review bot, either on every
-  push or on request (any bot works once you know its mode and verdict
-  signal; see Review bot below)
+- a GitHub repo where PRs get an automated review bot (any bot works
+  once you know its profile: which heads it reviews by itself, its
+  trigger text, its verdict signal; see Review bot below)
 - Python 3 for the Stop hook
 
 ## Install
@@ -170,13 +170,14 @@ itself: type anything into its terminal after the reset to continue it.
 The review bot usually has its own quota; when it's low, batch fixes per
 round rather than pushing piecemeal (rule 2).
 
-**Review bot.** Find out two things before the first brief, and put
-both in every brief. Its mode: does it review every push, or only on
-request (a trigger comment)? The trigger follows from the mode (rule 5).
-And its verdict signal: which reaction, if any, means "reviewed, clean",
-and which only means "picked up the trigger" (rule 21). Codex on GitHub,
-for example, reviews on PR open and on `@codex review`, reacts eyes
-when it picks up a trigger, and thumbs-up when it finds nothing.
+**Review bot.** Before the first brief, write down the bot's profile
+and put it in every brief: which heads it reviews by itself (the
+PR-opening head, every push, or none), its exact trigger text, and its
+verdict signal (which reaction means "reviewed, clean" and which only
+means "picked up the trigger"). Rules 5 and 21 act on it. Codex on
+GitHub, for example: reviews the PR-opening head by itself, later
+pushes only on `@codex review`, reacts eyes when it picks up a
+trigger, and thumbs-up when it finds nothing.
 
 **Daily rhythm.** The founder gives the reviewer the current state (main
 tip, open PRs, who is on what ticket). The reviewer rules on anything
@@ -260,9 +261,10 @@ in `skills/agent-team/SKILL.md`.
    the PR directly.
 4. Answer repeated findings in-thread naming the fixing commit; never
    push a no-op to force a bot re-run.
-5. The brief states the bot's mode. Reviews every push: push and
-   watch; trigger once only if nothing arrives within 30 minutes.
-   Reviews on request only: trigger once per head, right after the push. A stray
+5. Trigger per head, from the bot profile in the brief. A head the bot
+   reviews by itself (often the PR-opening head): push and watch,
+   trigger once only after 30 minutes of nothing. A head it reviews
+   only on request: trigger once, right after the push. A stray
    trigger can buy a second paid review; a missing one wastes the round.
 6. Never end a turn while a verdict is pending; wait in bounded 5-minute
    calls, never one unbounded loop. An unbounded loop blocked an

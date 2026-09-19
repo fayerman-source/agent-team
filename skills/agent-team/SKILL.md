@@ -26,9 +26,9 @@ no domain content, no account names, no socket paths.
 - **Builder(s)**. One ticket per feature branch (`ticket/<n>-<slug>`),
   one PR per ticket, one worktree per ticket. Never touches another
   agent's worktree.
-- **Review bot**. Reviews every push, or only on request, depending on
-  the bot (rule 5). Optional second reviewers are read-only, on their
-  own clone.
+- **Review bot**. Reviews some heads by itself (often the PR-opening
+  head, sometimes every push) and others only on request (rule 5).
+  Optional second reviewers are read-only, on their own clone.
 - **Founder** (human). Approves milestones, deploys, anything
   irreversible. Can grant the reviewer overnight authority for
   everything except deploy.
@@ -57,9 +57,12 @@ one, or "founder call") and why.
 
 **Brief**: what the coordinator hands a builder before it starts a
 ticket: the ticket, the branch name, the worktree path, the review bot's
-mode (reviews every push, or on request only; see rule 5) and verdict
-signal (rule 21), and anything the ticket depends on that isn't in the
-ticket text already.
+profile, and anything the ticket depends on that isn't in the ticket
+text already. The bot profile is data, stated once per project: which
+heads it reviews by itself (the PR-opening head, every push, or none),
+its exact trigger text, and its verdict signal (rule 21). The brief
+names the trigger text; it never tells the builder to post it ahead of
+the rule.
 
 ## The merge gate
 
@@ -92,12 +95,15 @@ not a decree.
    test, then resolved. An out-of-scope design question is answered
    "pre-existing, filed as a leftover" and recorded in the plan. Never
    push a no-op change just to make a bot re-run.
-5. **The brief states the bot's mode; the trigger follows from it.**
-   Reviews every push: push and watch; trigger once only if nothing
-   arrives within 30 minutes. Reviews on request only: trigger once per
-   head, right after the push, never twice. Why: a trigger on an
-   auto-reviewed head can buy a second paid review; no trigger on an
-   on-request bot wastes the round's wall-clock.
+5. **Trigger per head, from the bot profile.** Ask of each head: does
+   the bot review this one by itself? Many bots review the PR-opening
+   head automatically and later pushes only on request; some review
+   every push. A head it reviews by itself: push and watch, and trigger
+   once only if nothing arrives within 30 minutes. A head it reviews
+   only on request: trigger once, right after the push. Never twice
+   per head. Why: a trigger on an auto-reviewed head can buy a second
+   paid review; no trigger on an on-request head wastes the round's
+   wall-clock.
 
 ### Turn discipline
 
@@ -179,8 +185,8 @@ not a decree.
     verdict reaction, as the brief names it, created after the push. An
     acknowledgement reaction (Codex: eyes, where thumbs-up is its clean
     verdict) means the bot picked up a trigger, not that it reached a
-    verdict; keep polling. When to trigger at all depends on the bot's
-    mode (rule 5). Why: the bot's clean verdict arrived as a plain PR
+    verdict; keep polling. When to trigger at all depends on the bot
+    profile (rule 5). Why: the bot's clean verdict arrived as a plain PR
     comment, the check only looked at review objects, and a clean PR was
     re-triggered, wasting a round.
 
