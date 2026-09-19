@@ -26,8 +26,9 @@ no domain content, no account names, no socket paths.
 - **Builder(s)**. One ticket per feature branch (`ticket/<n>-<slug>`),
   one PR per ticket, one worktree per ticket. Never touches another
   agent's worktree.
-- **Review bot**. Runs on every push (e.g. a CI review bot). Optional
-  second reviewers are read-only, on their own clone.
+- **Review bot**. Reviews every push, or only on request, depending on
+  the bot (rule 5). Optional second reviewers are read-only, on their
+  own clone.
 - **Founder** (human). Approves milestones, deploys, anything
   irreversible. Can grant the reviewer overnight authority for
   everything except deploy.
@@ -56,8 +57,9 @@ one, or "founder call") and why.
 
 **Brief**: what the coordinator hands a builder before it starts a
 ticket: the ticket, the branch name, the worktree path, the review bot's
-mode (reviews every push, or on request only; see rule 5), and anything
-the ticket depends on that isn't in the ticket text already.
+mode (reviews every push, or on request only; see rule 5) and verdict
+signal (rule 21), and anything the ticket depends on that isn't in the
+ticket text already.
 
 ## The merge gate
 
@@ -93,9 +95,9 @@ not a decree.
 5. **The brief states the bot's mode; the trigger follows from it.**
    Reviews every push: push and watch; trigger once only if nothing
    arrives within 30 minutes. Reviews on request only: trigger once per
-   head, right after the push, never twice. Why:
-   a trigger on an auto-reviewed head can buy a second paid review; no
-   trigger on an on-request bot wastes the round's wall-clock.
+   head, right after the push, never twice. Why: a trigger on an
+   auto-reviewed head can buy a second paid review; no trigger on an
+   on-request bot wastes the round's wall-clock.
 
 ### Turn discipline
 
@@ -173,13 +175,14 @@ not a decree.
 
 21. **A head counts as reviewed only on one of these**: a bot review
     object with `commit_id` equal to the head; a bot issue comment on
-    the PR naming the head sha, created after the push; a bot thumbs-up
-    created after the push. An eyes reaction means the bot acknowledged
-    a trigger, not that it reached a verdict; keep polling. When to
-    trigger at all depends on the bot's mode (rule 5). Why: the
-    bot's clean verdict arrived as a plain PR comment, the check only
-    looked at review objects, and a clean PR was re-triggered, wasting a
-    round.
+    the PR naming the head sha, created after the push; the bot's
+    verdict reaction, as the brief names it, created after the push. An
+    acknowledgement reaction (Codex: eyes, where thumbs-up is its clean
+    verdict) means the bot picked up a trigger, not that it reached a
+    verdict; keep polling. When to trigger at all depends on the bot's
+    mode (rule 5). Why: the bot's clean verdict arrived as a plain PR
+    comment, the check only looked at review objects, and a clean PR was
+    re-triggered, wasting a round.
 
 ### Process hygiene (continued)
 

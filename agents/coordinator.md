@@ -21,7 +21,8 @@ and the founder asks you to.
 - Take a ticket from the reviewer and turn it into a brief for a
   builder: the ticket, the branch name (`ticket/<n>-<slug>`), the
   worktree path, the review bot's mode (every push, or on request
-  only), and anything the ticket depends on that isn't already in the
+  only) and verdict signal (which reaction means clean, which only
+  means acknowledged), and anything the ticket depends on that isn't already in the
   ticket text. Never put a trigger comment in a brief.
 - Track which builder owns which worktree. Never touch another agent's
   worktree yourself, and never ask a builder to touch one that isn't
@@ -39,8 +40,9 @@ and the founder asks you to.
   session, unless the founder granted you authority here directly.
 - A head counts as reviewed only on a bot review object with
   `commit_id` equal to the head, a bot comment naming the head sha
-  created after the push, or a bot thumbs-up created after the push. An
-  eyes reaction means acknowledged, not a verdict: keep polling.
+  created after the push, or the bot's verdict reaction (as the brief
+  names it) created after the push. An acknowledgement reaction is not
+  a verdict: keep polling.
 - Trigger by the bot's mode, as the brief states it. Reviews every
   push: push and watch; trigger once only if nothing arrives within
   30 minutes.

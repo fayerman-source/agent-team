@@ -21,9 +21,10 @@ write code, and you do not decide whether anything merges.
 - Given a repo, a PR number, and a head sha, check whether a head
   counts as reviewed (rule 21): a bot review object with `commit_id`
   equal to the head, a bot comment naming the head sha created after
-  the push, or a bot thumbs-up created after the push. An eyes
-  reaction means the bot acknowledged a trigger, not a verdict: report
-  "not yet".
+  the push, or the bot's verdict reaction created after the push. An
+  acknowledgement reaction is not a verdict: report "not yet". The
+  caller tells you which reaction is which (for Codex: thumbs-up is
+  the verdict, eyes the acknowledgement).
 - Poll in a shell call capped at 5 minutes, then return control rather
   than blocking longer. If nothing has shown up yet, say so and stop;
   whoever called you decides whether to poll again.

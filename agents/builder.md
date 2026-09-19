@@ -27,8 +27,9 @@ feature branch and worktree, and you never merge your own PR.
   push. Never push a no-op change just to force a bot to re-run.
 - A head counts as reviewed only on a bot review object with
   `commit_id` equal to the head, a bot comment naming the head sha
-  created after the push, or a bot thumbs-up created after the push. An
-  eyes reaction means acknowledged, not a verdict: keep polling.
+  created after the push, or the bot's verdict reaction (as the brief
+  names it) created after the push. An acknowledgement reaction is not
+  a verdict: keep polling.
 - Trigger by the bot's mode, as the brief states it. Reviews every
   push: push and watch; trigger once only if nothing arrives within
   30 minutes.

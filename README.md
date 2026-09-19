@@ -48,8 +48,9 @@ running is on the builder.
 - Claude Code with plugin support, and messaging between sessions
   (sessions send each other messages by name or socket address)
 - `git` with worktrees, and the GitHub CLI (`gh`), authenticated
-- a GitHub repo where PRs get an automated review bot on every push
-  (any bot works; rule 21 covers how to detect its verdict)
+- a GitHub repo where PRs get an automated review bot, either on every
+  push or on request (any bot works once you know its mode and verdict
+  signal; see Review bot below)
 - Python 3 for the Stop hook
 
 ## Install
@@ -169,12 +170,13 @@ itself: type anything into its terminal after the reset to continue it.
 The review bot usually has its own quota; when it's low, batch fixes per
 round rather than pushing piecemeal (rule 2).
 
-**Review bot.** Find out two things before the first brief. Its mode:
-does it review every push, or only on request (a trigger comment such as
-`@codex review`)? The brief states the mode, and the trigger follows
-from it (rule 5). And how it signals a verdict: a review object, a
-comment naming the sha, or a thumbs-up. An eyes reaction only means it
-picked up a trigger (rule 21).
+**Review bot.** Find out two things before the first brief, and put
+both in every brief. Its mode: does it review every push, or only on
+request (a trigger comment)? The trigger follows from the mode (rule 5).
+And its verdict signal: which reaction, if any, means "reviewed, clean",
+and which only means "picked up the trigger" (rule 21). Codex on GitHub,
+for example, reviews on PR open and on `@codex review`, reacts eyes
+when it picks up a trigger, and thumbs-up when it finds nothing.
 
 **Daily rhythm.** The founder gives the reviewer the current state (main
 tip, open PRs, who is on what ticket). The reviewer rules on anything
@@ -208,17 +210,17 @@ relayed secondhand, per rule 8).
                        |
                        v
    +---------------------------------------------+
-   |                 reviewer                     |
-   |  plans tickets, writes design notes,          |
-   |  rules on reports, never builds               |
+   |                   reviewer                  |
+   |  plans tickets, writes design notes,        |
+   |  rules on reports, never builds             |
    +---------------------------------------------+
                        |
               tickets, rulings, briefs
                        v
    +---------------------------------------------+
-   |               coordinator                    |
-   |  briefs builders, verifies reports against    |
-   |  GitHub, merges when the gate holds           |
+   |                 coordinator                 |
+   |  briefs builders, verifies reports against  |
+   |  GitHub, merges when the gate holds         |
    +---------------------------------------------+
                        |
             brief: ticket, branch, worktree
@@ -237,9 +239,9 @@ relayed secondhand, per rule 8).
         |                             |
         v                             v
   +---------------------------------------------+
-  |  review bot on every push (+ optional        |
-  |  read-only second reviewers on their own      |
-  |  clone)                                       |
+  |  review bot, per push or on request         |
+  |  (+ optional read-only second reviewers,    |
+  |  each on its own clone)                     |
   +---------------------------------------------+
 ```
 
@@ -303,8 +305,9 @@ in `skills/agent-team/SKILL.md`.
     merge on the coordinator's own check. A docs PR took five heads and
     sixteen prose findings without converging.
 21. A head counts as reviewed only on a bot review object on that sha,
-    a bot comment naming that sha, or a bot thumbs-up created after the
-    push. An eyes reaction is an acknowledgement, not a verdict. A
+    a bot comment naming that sha, or the bot's verdict reaction
+    created after the push; an acknowledgement reaction (Codex: eyes)
+    is not a verdict. A
     clean verdict that arrived as a plain comment was missed and
     re-triggered, wasting a round.
 22. Keep `papercuts.md` at the repo root, shared by all sessions: append
