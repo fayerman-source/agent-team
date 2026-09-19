@@ -1,2 +1,14 @@
 __pycache__/
 *.pyc
+
+# Local Claude settings & configs
+settings.json
+.claude/
+.env*
+*.local
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*~

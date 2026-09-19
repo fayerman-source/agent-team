@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/report-state.py"
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/report-state.py\""
           }
         ]
       }

@@ -41,32 +41,39 @@ def find_reviewer_address():
                 data = json.load(fh)
         except (OSError, json.JSONDecodeError):
             continue
-        value = data.get("reviewerAddress") or data.get("agentTeam", {}).get("reviewerAddress")
+        if not isinstance(data, dict):
+            continue
+        agent_team = data.get("agentTeam")
+        value = data.get("reviewerAddress") or (agent_team.get("reviewerAddress") if isinstance(agent_team, dict) else None)
         if value:
-            return value
+            return str(value)
 
     return None
 
 
-payload = json.load(sys.stdin)
-if payload.get("stop_hook_active"):
+try:
+    payload = json.load(sys.stdin)
+except (OSError, json.JSONDecodeError):
+    sys.exit(0)
+
+if not isinstance(payload, dict) or payload.get("stop_hook_active"):
     sys.exit(0)
 
 last_text = ""
 try:
-    with open(payload["transcript_path"], encoding="utf-8") as fh:
+    with open(payload["transcript_path"], encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if entry.get("type") != "assistant":
+            if not isinstance(entry, dict) or entry.get("type") != "assistant":
                 continue
             content = entry.get("message", {}).get("content", [])
             texts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
             if texts:
                 last_text = "\n".join(texts)
-except (OSError, KeyError):
+except (OSError, KeyError, TypeError, AttributeError):
     sys.exit(0)
 
 if "STATE:" in last_text:
