@@ -228,6 +228,47 @@ test("pollOnce: eyes on a trigger comment is an acknowledgement", async () => {
   assert.equal(result.ack_at, "2026-09-21T12:02:30Z");
 });
 
+test("pollOnce: a trigger comment posted before `since` still gets its later +1 counted", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
+      // Posted 2 minutes before `since` (12:00:00) -- the common case
+      // where the caller triggers the bot, then starts the waiter.
+      return [{ id: 557, user: { login: "someone" }, created_at: "2026-09-21T11:58:00Z", body: "@codex review" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    if (endpoint === `repos/${REPO}/issues/comments/557/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:03:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE, deadlineMin: 30 }, ghApi, async () => {});
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.form, "reaction");
+  assert.equal(result.clean, true);
+  assert.equal(result.verdict_at, "2026-09-21T12:03:00Z");
+});
+
+test("pollOnce: a +1 on a pre-`since` trigger comment does not count if the reaction itself predates `since`", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
+      return [{ id: 558, user: { login: "someone" }, created_at: "2026-09-21T11:58:00Z", body: "@codex review" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    if (endpoint === `repos/${REPO}/issues/comments/558/reactions`) {
+      // Reacted before `since` -- a stale verdict from an earlier run,
+      // must not count for this one.
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T11:59:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE, deadlineMin: 30 }, ghApi, async () => {});
+  assert.equal(result.outcome, "none");
+});
+
 test("resolveReactions: codex defaults to +1/eyes, other bots default to none/none", () => {
   assert.deepEqual(resolveReactions(DEFAULT_BOT, undefined, undefined), {
     verdictReaction: "+1",

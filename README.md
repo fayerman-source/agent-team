@@ -86,6 +86,8 @@ they default to `+1` and `eyes`; for any other bot they both default to
 `none`, meaning reactions are never read as a verdict for it — only
 review entries and PR comments count — unless you pass these flags
 explicitly. Pass `none` yourself to turn a reaction off even for codex.
+Pass `--since` as the push or trigger time when you have it, rather
+than leaving it at the script's own start time.
 
 Each interval it checks, in order: the PR head sha (a mismatch with
 `--head` means `superseded`), the bot's reviews on that head (`review`

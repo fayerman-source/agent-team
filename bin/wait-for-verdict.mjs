@@ -178,7 +178,7 @@ const EMPTY_COUNTS = { P1: 0, P2: 0, P3: 0, unrated: 0 };
 // ---------------------------------------------------------------------
 
 export async function pollOnce(
-  { repo, pr, head, bot, since, verdictReaction, ackReaction },
+  { repo, pr, head, bot, since, verdictReaction, ackReaction, deadlineMin },
   ghApi,
   sleep
 ) {
@@ -186,6 +186,7 @@ export async function pollOnce(
   const vr = resolved.verdictReaction;
   const ar = resolved.ackReaction;
   const reactionsIgnored = resolved.reactionsIgnored;
+  const effectiveDeadlineMin = deadlineMin ?? DEFAULT_DEADLINE_MIN;
 
   // 1. Superseded?
   const prData = await ghApi(`repos/${repo}/pulls/${pr}`);
@@ -254,6 +255,15 @@ export async function pollOnce(
   // (reusing the list already fetched in step 3): when codex is
   // triggered by an "@codex review" comment, its verdict reaction can
   // land on that trigger comment instead of on the PR itself.
+  //
+  // The trigger comment itself is very often posted BEFORE `since`
+  // (the caller posts "@codex review", then starts the waiter with
+  // --since defaulting to that start time) -- so the comment is
+  // scanned by a window reaching back `deadlineMin` minutes before
+  // `since`, wide enough to catch any trigger comment posted within
+  // this run's own deadline. The REACTION itself is still required to
+  // be after `since`, which is what stops an old verdict from
+  // counting.
   let thumbsUp = null;
   let eyes = null;
 
@@ -266,8 +276,9 @@ export async function pollOnce(
     if (ar !== "none") eyes = botReactions.find((r) => r.content === ar);
 
     if (!thumbsUp && vr !== "none") {
+      const windowStartMs = sinceMs - effectiveDeadlineMin * 60000;
       const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
-        (c) => new Date(c.created_at).getTime() > sinceMs
+        (c) => new Date(c.created_at).getTime() >= windowStartMs
       );
       for (const c of recentComments) {
         const commentReactions = await ghApi(
