@@ -91,11 +91,14 @@ export function parseArgs(argv) {
   if (!Number.isFinite(args.intervalS) || args.intervalS <= 0) {
     throw new Error("--interval-s must be a finite positive number");
   }
-  if (!args.since) {
-    args.since = new Date().toISOString();
-  } else if (!Number.isFinite(Date.parse(args.since))) {
+  if (args.since !== undefined && !Number.isFinite(Date.parse(args.since))) {
     throw new Error("--since must be a valid timestamp");
   }
+  // No default here: an explicit --since is "arg"; a missing one is
+  // resolved async, against the head commit's own committer date
+  // (resolveSince), since that needs a network call parseArgs can't
+  // make.
+  args.sinceSource = args.since !== undefined ? "arg" : null;
   if (!args.log) {
     args.log =
       process.env.AGENT_TEAM_VERDICT_LOG ||
@@ -106,6 +109,33 @@ export function parseArgs(argv) {
   args.ackReaction = resolved.ackReaction;
   args.reactionsIgnored = resolved.reactionsIgnored;
   return args;
+}
+
+// An explicit --since is used as given. Otherwise, defaulting to the
+// waiter's own start time missed a verdict reaction the bot left
+// between the push and the waiter actually starting (a real gap: the
+// caller pushes, then starts this in the background, seconds to
+// minutes later). A commit's committer date is always at or before it
+// was pushed, so using it as `since` covers that whole gap instead.
+// Falls back to (now - 120s) if the commit lookup fails for any reason
+// (network, a head that isn't a real commit, malformed response).
+export async function resolveSince(args, ghApi, now) {
+  if (args.since !== undefined) {
+    return { since: args.since, sinceSource: "arg" };
+  }
+  try {
+    const commit = await ghApi(`repos/${args.repo}/commits/${args.head}`);
+    const committerDate = commit?.commit?.committer?.date;
+    if (!committerDate || !Number.isFinite(Date.parse(committerDate))) {
+      throw new Error("no usable committer date");
+    }
+    return { since: committerDate, sinceSource: "head-commit" };
+  } catch {
+    return {
+      since: new Date(now() - 120000).toISOString(),
+      sinceSource: "fallback",
+    };
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -195,6 +225,15 @@ export function countPriorities(findings) {
 
 const EMPTY_COUNTS = { P1: 0, P2: 0, P3: 0, unrated: 0 };
 
+// GitHub's own timestamps carry no milliseconds; `since` sometimes does
+// (a plain `new Date().toISOString()`), so comparing at millisecond
+// precision can read an event landing in the same whole second as
+// `since` as either side of it depending on where the milliseconds
+// happened to fall. Flooring both sides to the second removes that.
+function flooredMs(isoString) {
+  return Math.floor(new Date(isoString).getTime() / 1000) * 1000;
+}
+
 // ---------------------------------------------------------------------
 // One poll: checks PR head, reviews, issue comments, reactions in order.
 // ---------------------------------------------------------------------
@@ -256,7 +295,7 @@ export async function pollOnce(
 
   // 3. Issue comments by the bot, after `since`.
   const issueComments = await ghApi(`repos/${repo}/issues/${pr}/comments`);
-  const sinceMs = new Date(since).getTime();
+  const sinceMs = flooredMs(since);
   const botComments = (Array.isArray(issueComments) ? issueComments : [])
     .filter((c) => c.user?.login === bot && new Date(c.created_at).getTime() > sinceMs)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -316,17 +355,23 @@ export async function pollOnce(
     }
     if (eyes) eyesUrl = prUrl;
 
-    // Scanned whenever either reaction is enabled -- an ack-only caller
+    // Scanned whenever either reaction is enabled and no verdict
+    // reaction has been found yet -- an ack-only caller
     // (--verdict-reaction none --ack-reaction eyes) still needs the
     // trigger comment scanned for its own eyes reaction, not just a
-    // caller waiting on the verdict reaction.
-    if ((!thumbsUp || !eyes) && (vr !== "none" || ar !== "none")) {
+    // caller waiting on the verdict reaction. Short-circuited entirely
+    // once thumbsUp is already known (from the PR-level check above, or
+    // set inside this loop): a found verdict reaction is returned
+    // regardless of eyes, so a failing comment-reactions call on a
+    // LATER comment must not turn an already-found verdict into an
+    // `error` outcome.
+    if (!thumbsUp && (vr !== "none" || ar !== "none")) {
       const windowStartMs = sinceMs - effectiveDeadlineMin * 60000;
       const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
         (c) => new Date(c.created_at).getTime() >= windowStartMs
       );
       for (const c of recentComments) {
-        if (thumbsUp && eyes) break;
+        if (thumbsUp) break;
         const commentReactions = await ghApi(
           `repos/${repo}/issues/comments/${c.id}/reactions`
         );
@@ -420,6 +465,7 @@ function buildRecord(status, args, extra, ackAt, checks) {
     review_state: extra?.review_state ?? null,
     review_body: extra?.review_body ?? null,
     since: args.since,
+    since_source: args.sinceSource ?? null,
     ack_at: ackAt,
     verdict_at: verdictAt,
     latency_s: latencyS,
@@ -505,10 +551,22 @@ async function main() {
     process.stderr.write(`wait-for-verdict: ${err.message}\n`);
     process.exit(1);
   }
+  const resolved = await resolveSince(args, defaultGhApi, Date.now);
+  args.since = resolved.since;
+  args.sinceSource = resolved.sinceSource;
   const record = await waitForVerdict(args, defaultGhApi);
   appendLog(args.log, record);
-  process.stdout.write(JSON.stringify(record) + "\n");
-  process.exit(exitCodeFor(record.status));
+  // process.exit() right after write() can cut a large line short when
+  // stdout is a pipe (the write is async under the hood); setting
+  // exitCode and awaiting the write's own callback lets Node flush
+  // before it exits on its own.
+  process.exitCode = exitCodeFor(record.status);
+  await new Promise((resolve, reject) => {
+    process.stdout.write(JSON.stringify(record) + "\n", (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
 // A manually built `file://${process.argv[1]}` string doesn't match

@@ -88,20 +88,24 @@ rewrite.
 
 Args: `--repo owner/name --pr N --head <full sha>` (required); optional
 `--bot <login>` (default `chatgpt-codex-connector[bot]`), `--since
-<ISO>` (default: script start time — start it right after the push or
-trigger), `--deadline-min` (default 30), `--interval-s` (default 45),
-`--log <path>` (default `$AGENT_TEAM_VERDICT_LOG` or
-`~/.local/state/agent-team/verdicts.jsonl`), `--verdict-reaction
-<content>` and `--ack-reaction <content>` (which reaction content
-string means a clean verdict, and which means only an acknowledgement —
-part of the bot profile from rule 5/21's brief). Defaults for these two
-depend on `--bot`: for `chatgpt-codex-connector[bot]` (the default bot)
-they default to `+1` and `eyes`; for any other bot they both default to
-`none`, meaning reactions are never read as a verdict for it — only
-review entries and PR comments count — unless you pass these flags
-explicitly. Pass `none` yourself to turn a reaction off even for codex.
-Pass `--since` as the push or trigger time when you have it, rather
-than leaving it at the script's own start time.
+<ISO>` (optional — default is the head commit's own committer date,
+fetched from `repos/{repo}/commits/{head}`, not the script's start
+time: a commit's committer date is always at or before it was pushed,
+so this covers the gap between the push and the waiter actually
+starting, which the start time alone would miss. Falls back to `now -
+120s` if that lookup fails. Pass `--since` yourself only when you have
+a more precise time and want to skip the lookup), `--deadline-min`
+(default 30), `--interval-s` (default 45), `--log <path>` (default
+`$AGENT_TEAM_VERDICT_LOG` or `~/.local/state/agent-team/verdicts.jsonl`),
+`--verdict-reaction <content>` and `--ack-reaction <content>` (which
+reaction content string means a clean verdict, and which means only an
+acknowledgement — part of the bot profile from rule 5/21's brief).
+Defaults for these two depend on `--bot`: for
+`chatgpt-codex-connector[bot]` (the default bot) they default to `+1`
+and `eyes`; for any other bot they both default to `none`, meaning
+reactions are never read as a verdict for it — only review entries and
+PR comments count — unless you pass these flags explicitly. Pass
+`none` yourself to turn a reaction off even for codex.
 
 Each interval it checks, in order: the PR head sha (a mismatch with
 `--head` means `superseded`), the bot's reviews on that head (`review`
@@ -116,15 +120,17 @@ continues.
 
 Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
 head, bot, form, clean, findings, counts, review_id, url,
-reaction_target, review_state, review_body, since, ack_at, verdict_at,
-latency_s, reactions_ignored, checks}`. `reaction_target` is `"pr"` or
-`"comment"` for a `reaction` form (which of the two the reaction
-counted was found on, matching `url`), `null` for every other form.
-`review_state` and `review_body` (first 300 chars, or `null`) are the
-bot review's own state and body for a `review` form, `null` for every
-other form: a `CHANGES_REQUESTED` review with no inline comments still
-reads `clean: false`, since the finding can live in the review body
-rather than as a per-line comment.
+reaction_target, review_state, review_body, since, since_source,
+ack_at, verdict_at, latency_s, reactions_ignored, checks}`.
+`reaction_target` is `"pr"` or `"comment"` for a `reaction` form (which
+of the two the reaction counted was found on, matching `url`), `null`
+for every other form. `review_state` and `review_body` (first 300
+chars, or `null`) are the bot review's own state and body for a
+`review` form, `null` for every other form: a `CHANGES_REQUESTED`
+review with no inline comments still reads `clean: false`, since the
+finding can live in the review body rather than as a per-line comment.
+`since_source` is `"arg"`, `"head-commit"`, or `"fallback"` — where
+`since` actually came from.
 `reactions_ignored` is `true` when both reaction flags resolved to
 `none` for this run. Exit codes: `0` verdict, `2` timeout, `3`
 superseded, `1` error. The same JSON object is appended to the log file
