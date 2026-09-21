@@ -107,11 +107,14 @@ not a decree.
 
 ### Turn discipline
 
-6. **Never end a turn while a verdict is pending.** Wait in repeated
-   shell calls of at most 5 minutes each, looping with a deadline inside
-   each call, never one unbounded wait. Why: an unbounded wait blocks
-   inbound messages until it ends, and the founder had to interrupt to
-   get a message through.
+6. **Never poll for a verdict from the model.** After every push (or
+   trigger), start `wait-for-verdict` in the background (Bash
+   `run_in_background`) and end the turn; the harness wakes the session
+   when it exits. Never poll from the model, never sleep-loop, never
+   schedule wakeups, crons, or `/loop` to check a review. Why:
+   model-driven polling spent tokens on every empty check; a background
+   script costs none and wakes the session exactly once, when there's
+   something to act on.
 7. **Never end a turn silently.** The last action before stopping is a
    state report to the coordinator or reviewer (format above). This
    plugin's Stop hook enforces it. Why: agents ended turns after pushing
@@ -182,13 +185,17 @@ not a decree.
 21. **A head counts as reviewed only on one of these**: a bot review
     object with `commit_id` equal to the head; a bot issue comment on
     the PR naming the head sha, created after the push; the bot's
-    verdict reaction, as the brief names it, created after the push. An
-    acknowledgement reaction (Codex: eyes, where thumbs-up is its clean
-    verdict) means the bot picked up a trigger, not that it reached a
-    verdict; keep polling. When to trigger at all depends on the bot
-    profile (rule 5). Why: the bot's clean verdict arrived as a plain PR
-    comment, the check only looked at review objects, and a clean PR was
-    re-triggered, wasting a round.
+    verdict reaction, as the brief names it, created after the push. A
+    bare 👍 with no review is itself a clean verdict (founder ruling,
+    2026-09-21). An acknowledgement reaction (Codex: eyes) means the bot
+    picked up a trigger, not that it reached a verdict; keep waiting.
+    `wait-for-verdict` (see the "Verdict waiter" README section) is what
+    does this detection now, so no one hand-rolls it per session. When to
+    trigger at all depends on the bot profile (rule 5); the 30-minute
+    wait before a trigger is now the script's `timeout` exit, not a
+    manually counted clock. Why: the bot's clean verdict arrived as a
+    plain PR comment, the check only looked at review objects, and a
+    clean PR was re-triggered, wasting a round.
 
 ### Process hygiene (continued)
 
@@ -252,8 +259,9 @@ not a decree.
 29. **Decide at the top tier; execute wherever it is cheapest in total.**
     One or two commands the reviewer has already verified (a merge, a
     one-line check) are cheaper done directly than briefed, reported and
-    re-verified. Anything that reads, builds, polls or prints long
-    output goes to a builder with the exact command. A finding accepted
+    re-verified. Anything that reads, builds, checks status repeatedly,
+    or prints long output goes to a builder with the exact command
+    (never a model-driven poll loop — see rule 6). A finding accepted
     without a code change is answered on the PR with its reason: a
     comment is not a push and costs no review round.
 30. **Review quota limits pushes, not work.** Measurement, prototypes
@@ -273,20 +281,20 @@ not a decree.
 
 ## Narrow helpers
 
-A helper subagent that doesn't need repo conventions (a review-bot
-poller, a log scanner) should not carry the full project context. Give
-it, in its frontmatter:
+A helper subagent that doesn't need repo conventions (a log scanner, an
+inventory pass) should not carry the full project context. Give it, in
+its frontmatter:
 
 - `omitClaudeMd: true`, since it doesn't need project conventions
 - an explicit, cheap `model` (never inherit one)
 - `effort: low`
 - a turn cap, so it can't run away
 
-See `agents/verdict-poller.md` for a worked example: it polls the PR
-host for a review-bot verdict on one head sha, in bounded 5-minute
-calls, and reports back the three facts (rule 21's evidence, not a
-verdict), with no repo access beyond `Bash`. Because it skips project
-context, pass it the bot profile from the brief with every call.
+Verdict detection itself is not a subagent any more: it's the
+`wait-for-verdict` background script (see the README's "Verdict waiter"
+section), started with Bash `run_in_background` and left to wake the
+session on exit. The principle above still applies to any other narrow
+helper you add (a log scanner, an inventory pass).
 
 ## Operating loop, in short
 
@@ -294,8 +302,9 @@ context, pass it the bot profile from the brief with every call.
    coordinator.
 2. Coordinator briefs a builder: ticket, branch, worktree.
 3. Builder builds on its own worktree, pushes once per review round,
-   opens the PR, waits inside bounded polling calls for a verdict,
-   answers findings, sends a clean report, never ends a turn without a
+   opens the PR, starts `wait-for-verdict` in the background and ends
+   the turn, answers findings once woken, sends a clean report, never
+   ends a turn without a
    state report.
 4. Coordinator verifies the merge gate independently and merges.
 5. Anything irreversible (deploy, anything the founder should see) waits

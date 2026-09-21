@@ -18,8 +18,9 @@ It is process only: no domain content, no project code. It ships:
 
 - a skill (`agent-team`) with the roles, message formats, merge gate,
   and the 31 rules below
-- three agent definitions: `coordinator`, `builder`, and a small
-  `verdict-poller` helper
+- two agent definitions: `coordinator` and `builder`
+- `bin/wait-for-verdict.mjs`, a background verdict waiter (see "Verdict
+  waiter" below)
 - `/state` (write a state report) and `/papercut` (log a tooling
   problem) commands
 - an opt-in Stop hook that blocks a team session from ending a turn
@@ -31,17 +32,20 @@ It is process only: no domain content, no project code. It ships:
 reviewer     writes ticket 12, rules on design questions
 coordinator  briefs a builder: ticket 12, branch ticket/12-slug, worktree ../repo-12
 builder      builds, pushes once, opens the PR
-builder      polls for the bot's verdict in 5-minute calls, inside the same turn
-builder      fixes every finding in one push, polls again until the head is clean
+builder      starts wait-for-verdict in the background, ends the turn
+harness      wakes the builder's session when wait-for-verdict exits
+builder      fixes every finding in one push, starts wait-for-verdict again
 builder      clean report: head sha, review URL after the push, 0 unresolved threads
 builder      STATE: ticket-12 PR#34 9f3c2a1 done=review clean waiting=coordinator merge
 coordinator  re-checks all three against GitHub, merges with gh pr merge --merge
 founder      deploys
 ```
 
-A builder never ends its turn while a verdict is pending (rule 6). The
-Stop hook only checks that a `STATE:` line exists, so keeping the poll
-running is on the builder.
+A builder never polls for a verdict itself (rule 6): it starts
+`wait-for-verdict` in the background and ends the turn, and the harness
+wakes the session when the script exits. The Stop hook only checks that
+a `STATE:` line exists, so making sure the waiter is running before
+stopping is on the builder.
 
 ## Requirements
 
@@ -52,6 +56,45 @@ running is on the builder.
   once you know its profile: its login, which heads it reviews by
   itself, its trigger text, its verdict signal; see Review bot below)
 - Python 3 for the Stop hook
+- Node 24+ for `bin/wait-for-verdict.mjs`
+
+## Verdict waiter
+
+`bin/wait-for-verdict.mjs` replaces model-driven polling for a review
+bot's verdict (rule 6, rule 21). A builder or coordinator starts it in
+the background right after a push or a trigger, and ends its turn; the
+harness wakes the session when the process exits. The script itself
+never posts anything to the PR.
+
+**Stable interface.** Stage 2 will swap this script's internals for a
+webhook/WebSocket feed without changing any of the following: its
+arguments, what it prints on stdout, its exit codes, or its log line
+format. Anything that calls it today keeps working unchanged after that
+rewrite.
+
+Args: `--repo owner/name --pr N --head <full sha>` (required); optional
+`--bot <login>` (default `chatgpt-codex-connector[bot]`), `--since
+<ISO>` (default: script start time — start it right after the push or
+trigger), `--deadline-min` (default 30), `--interval-s` (default 45),
+`--log <path>` (default `$AGENT_TEAM_VERDICT_LOG` or
+`~/.local/state/agent-team/verdicts.jsonl`).
+
+Each interval it checks, in order: the PR head sha (a mismatch with
+`--head` means `superseded`), the bot's reviews on that head (`review`
+form; findings carry priority, title, path, line), the bot's issue
+comments since `--since` (`pr-comment` form — the caller must read it,
+it may be a usage-limit notice rather than a verdict), then the bot's
+reactions since `--since` (a bare 👍 is a clean verdict; 👀 is only an
+acknowledgement and polling continues).
+
+Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
+head, bot, form, clean, findings, counts, review_id, url, since,
+ack_at, verdict_at, latency_s, checks}`. Exit codes: `0` verdict, `2`
+timeout, `3` superseded, `1` error. The same JSON object is appended to
+the log file on every exit (including timeout/superseded/error) as the
+measurement record of push-to-verdict latency.
+
+Tests: `node --test` (zero dependencies, the `gh` call is injected).
 
 ## Install
 
@@ -266,9 +309,10 @@ in `skills/agent-team/SKILL.md`.
    on request: trigger once, right after the push (for the opening head,
    right after the PR is opened). A stray trigger can buy a second paid
    review; a missing one wastes the round.
-6. Never end a turn while a verdict is pending; wait in bounded 5-minute
-   calls, never one unbounded loop. An unbounded loop blocked an
-   inbound message until the founder pressed escape.
+6. Never poll for a verdict from the model. Start `wait-for-verdict` in
+   the background after every push or trigger and end the turn; the
+   harness wakes the session when it exits. Model-driven polling spent
+   tokens on every empty check.
 7. Never end a turn silently; report state first. Agents ended turns
    after pushing and nobody was watching for 20+ minutes.
 8. Cross-session relay is not approval; deploys and merges wait for the
@@ -339,9 +383,9 @@ in `skills/agent-team/SKILL.md`.
     the full 40-char sha. Principles with a user cost, scope, spending
     and legal stay with the founder.
 29. Decide at the top tier, execute wherever it is cheapest in total:
-    one or two verified commands directly, anything that reads, builds
-    or polls to a builder. Accepted findings are answered on the PR; a
-    comment costs no review round.
+    one or two verified commands directly, anything that reads, builds,
+    or checks status repeatedly to a builder. Accepted findings are
+    answered on the PR; a comment costs no review round.
 30. Review quota limits pushes, not work: measure and build locally
     while the bot is out. Two builders in parallel only when one is
     outside the shared core and its version number.

@@ -1,6 +1,6 @@
 {
   "name": "agent-team",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Multi-agent working method for a small dev team of Claude sessions: a planner-reviewer, a coordinator, and one or more builders, with a Stop hook that enforces a state report before any turn ends.",
   "author": {
     "name": "fayerman-source"

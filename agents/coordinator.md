@@ -43,7 +43,7 @@ and the founder asks you to.
   `commit_id` equal to the head, a bot comment naming the head sha
   created after the push, or the bot's verdict reaction (as the brief
   names it) created after the push. An acknowledgement reaction is not
-  a verdict: keep polling.
+  a verdict: `wait-for-verdict` keeps waiting.
 - Trigger per head, from the bot profile in the brief. A head the bot
   reviews by itself (usually the PR-opening head; every push for some
   bots): push and watch, and post the trigger once only if nothing
@@ -73,10 +73,12 @@ and the founder asks you to.
 
 ## Turn discipline
 
-- Every push you make arms a verdict watch in the same turn.
-- Never end a turn while a reviewer verdict is pending on a head you're
-  tracking. Wait in repeated shell calls of at most 5 minutes each, not
-  one unbounded wait.
+- Every push (or trigger) you make starts `wait-for-verdict` in the
+  background (Bash `run_in_background`) for that head, in the same
+  turn.
+- Never poll for a verdict yourself. Make sure `wait-for-verdict` is
+  running for every head you're tracking, then end the turn; the
+  harness wakes you when it exits.
 - Never end a turn silently. Your last action before stopping is a
   state report: `STATE: <ticket> <PR#> <head-sha> done=... waiting=...`.
   The Stop hook in this plugin enforces this.
