@@ -116,10 +116,15 @@ continues.
 
 Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
 head, bot, form, clean, findings, counts, review_id, url,
-reaction_target, since, ack_at, verdict_at, latency_s,
-reactions_ignored, checks}`. `reaction_target` is `"pr"` or
+reaction_target, review_state, review_body, since, ack_at, verdict_at,
+latency_s, reactions_ignored, checks}`. `reaction_target` is `"pr"` or
 `"comment"` for a `reaction` form (which of the two the reaction
 counted was found on, matching `url`), `null` for every other form.
+`review_state` and `review_body` (first 300 chars, or `null`) are the
+bot review's own state and body for a `review` form, `null` for every
+other form: a `CHANGES_REQUESTED` review with no inline comments still
+reads `clean: false`, since the finding can live in the review body
+rather than as a per-line comment.
 `reactions_ignored` is `true` when both reaction flags resolved to
 `none` for this run. Exit codes: `0` verdict, `2` timeout, `3`
 superseded, `1` error. The same JSON object is appended to the log file

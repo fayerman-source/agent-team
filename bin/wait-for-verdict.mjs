@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 export const DEFAULT_BOT = "chatgpt-codex-connector[bot]";
 export const DEFAULT_DEADLINE_MIN = 30;
@@ -90,7 +91,11 @@ export function parseArgs(argv) {
   if (!Number.isFinite(args.intervalS) || args.intervalS <= 0) {
     throw new Error("--interval-s must be a finite positive number");
   }
-  if (!args.since) args.since = new Date().toISOString();
+  if (!args.since) {
+    args.since = new Date().toISOString();
+  } else if (!Number.isFinite(Date.parse(args.since))) {
+    throw new Error("--since must be a valid timestamp");
+  }
   if (!args.log) {
     args.log =
       process.env.AGENT_TEAM_VERDICT_LOG ||
@@ -232,12 +237,18 @@ export async function pollOnce(
     return {
       outcome: "verdict",
       form: "review",
-      clean: findings.length === 0,
+      // A review can carry its finding in the body/state alone, with no
+      // inline comments (e.g. a bot that requests changes in prose) --
+      // an empty comment list is clean only when the review itself
+      // isn't a blocking one.
+      clean: findings.length === 0 && botReview.state !== "CHANGES_REQUESTED",
       findings,
       counts: countPriorities(findings),
       review_id: botReview.id,
       url: botReview.html_url ?? null,
       reaction_target: null,
+      review_state: botReview.state ?? null,
+      review_body: botReview.body ? String(botReview.body).slice(0, 300) : null,
       verdict_at: botReview.submitted_at,
       reactions_ignored: reactionsIgnored,
     };
@@ -261,6 +272,8 @@ export async function pollOnce(
       review_id: null,
       url: comment.html_url ?? null,
       reaction_target: null,
+      review_state: null,
+      review_body: null,
       verdict_at: comment.created_at,
       reactions_ignored: reactionsIgnored,
     };
@@ -349,6 +362,8 @@ export async function pollOnce(
       review_id: null,
       url: thumbsUpUrl,
       reaction_target: thumbsUpTarget,
+      review_state: null,
+      review_body: null,
       verdict_at: thumbsUp.created_at,
       reactions_ignored: reactionsIgnored,
     };
@@ -402,6 +417,8 @@ function buildRecord(status, args, extra, ackAt, checks) {
     review_id: extra?.review_id ?? null,
     url: extra?.url ?? null,
     reaction_target: extra?.reaction_target ?? null,
+    review_state: extra?.review_state ?? null,
+    review_body: extra?.review_body ?? null,
     since: args.since,
     ack_at: ackAt,
     verdict_at: verdictAt,
@@ -494,8 +511,20 @@ async function main() {
   process.exit(exitCodeFor(record.status));
 }
 
-const isMain =
-  process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+// A manually built `file://${process.argv[1]}` string doesn't match
+// import.meta.url whenever the path needs URL escaping (spaces, etc.)
+// or is reached through a symlink (Node resolves module URLs to the
+// real path) -- both silently made this guard false and skipped
+// main() entirely with no error, no log line, no output. Resolving
+// through pathToFileURL and realpathSync makes both sides comparable.
+let isMain = false;
+if (process.argv[1]) {
+  try {
+    isMain = import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+  } catch {
+    isMain = false;
+  }
+}
 if (isMain) {
   main();
 }

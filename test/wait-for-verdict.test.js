@@ -159,6 +159,31 @@ test("pollOnce: review with zero comments is clean (waits once for the 0-1s lag)
   assert.deepEqual(sleeps, [5000]);
 });
 
+test("pollOnce: a CHANGES_REQUESTED review with zero comments is not clean", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint.endsWith(`/pulls/${PR}`)) return prHead(HEAD);
+    if (endpoint.endsWith("/reviews")) {
+      return [{
+        id: 6,
+        user: { login: DEFAULT_BOT },
+        commit_id: HEAD,
+        state: "CHANGES_REQUESTED",
+        body: "This breaks the build, see the logs.",
+        submitted_at: "2026-09-21T12:01:00Z",
+        html_url: "u",
+      }];
+    }
+    if (endpoint.endsWith("/reviews/6/comments")) return [];
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.clean, false);
+  assert.equal(result.findings.length, 0);
+  assert.equal(result.review_state, "CHANGES_REQUESTED");
+  assert.equal(result.review_body, "This breaks the build, see the logs.");
+});
+
 test("pollOnce: thumbs-up reaction is a clean verdict", async () => {
   const ghApi = async (endpoint) => {
     if (endpoint.endsWith(`/pulls/${PR}`)) return prHead(HEAD);
@@ -521,6 +546,13 @@ test("parseArgs rejects a non-finite --interval-s", () => {
   assert.throws(
     () => parseArgs(["--repo", REPO, "--pr", String(PR), "--head", HEAD, "--interval-s", "nope"]),
     /--interval-s must be a finite positive number/
+  );
+});
+
+test("parseArgs rejects an unparseable --since", () => {
+  assert.throws(
+    () => parseArgs(["--repo", REPO, "--pr", String(PR), "--head", HEAD, "--since", "nope"]),
+    /--since must be a valid timestamp/
   );
 });
 
