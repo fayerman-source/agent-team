@@ -66,6 +66,18 @@ the background right after a push or a trigger, and ends its turn; the
 harness wakes the session when the process exits. The script itself
 never posts anything to the PR.
 
+**Invocation.** The file is executable (`#!/usr/bin/env node`, mode
+0755) but is not on `PATH` and isn't exposed through a package
+manifest, so start it by its full path, not by a bare name:
+
+```
+node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
+```
+
+`CLAUDE_PLUGIN_ROOT` is set inside plugin hooks, when this repo is
+installed as a plugin; a session without it (a plain checkout) uses its
+own checkout path instead.
+
 **Stable interface.** Stage 2 will swap this script's internals for a
 webhook/WebSocket feed without changing any of the following: its
 arguments, what it prints on stdout, its exit codes, or its log line
@@ -101,8 +113,11 @@ verdict, the ack reaction is only an acknowledgement and polling
 continues.
 
 Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
-head, bot, form, clean, findings, counts, review_id, url, since,
-ack_at, verdict_at, latency_s, reactions_ignored, checks}`.
+head, bot, form, clean, findings, counts, review_id, url,
+reaction_target, since, ack_at, verdict_at, latency_s,
+reactions_ignored, checks}`. `reaction_target` is `"pr"` or
+`"comment"` for a `reaction` form (which of the two the reaction
+counted was found on, matching `url`), `null` for every other form.
 `reactions_ignored` is `true` when both reaction flags resolved to
 `none` for this run. Exit codes: `0` verdict, `2` timeout, `3`
 superseded, `1` error. The same JSON object is appended to the log file

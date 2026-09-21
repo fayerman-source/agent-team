@@ -22,9 +22,10 @@ session and echo it as your final text.
 5. Summarize in one short clause what you're waiting on: a founder
    decision, the coordinator's merge, nothing, etc. Use the argument
    above if given. If a review verdict is still pending on your pushed
-   head, make sure `wait-for-verdict` is running in the background
-   (start it if not) before you report and stop (rule 6); the harness
-   wakes you when it exits.
+   head, make sure the verdict waiter is running in the background
+   (start it if not, `node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`)
+   before you report and stop (rule 6); the harness wakes you when it
+   exits.
 6. Send this to the coordinator/reviewer session's address (see the
    `agent-team` skill for how sessions address each other), and print it
    as your final line in exactly this form:

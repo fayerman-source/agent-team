@@ -220,6 +220,7 @@ export async function pollOnce(
       counts: countPriorities(findings),
       review_id: botReview.id,
       url: botReview.html_url ?? null,
+      reaction_target: null,
       verdict_at: botReview.submitted_at,
       reactions_ignored: reactionsIgnored,
     };
@@ -242,6 +243,7 @@ export async function pollOnce(
       counts: EMPTY_COUNTS,
       review_id: null,
       url: comment.html_url ?? null,
+      reaction_target: null,
       verdict_at: comment.created_at,
       reactions_ignored: reactionsIgnored,
     };
@@ -264,8 +266,12 @@ export async function pollOnce(
   // this run's own deadline. The REACTION itself is still required to
   // be after `since`, which is what stops an old verdict from
   // counting.
+  const prUrl = `https://github.com/${repo}/pull/${pr}`;
   let thumbsUp = null;
   let eyes = null;
+  let thumbsUpTarget = null; // "pr" | "comment"
+  let thumbsUpUrl = null;
+  let eyesUrl = null;
 
   if (!reactionsIgnored) {
     const reactions = await ghApi(`repos/${repo}/issues/${pr}/reactions`);
@@ -274,26 +280,43 @@ export async function pollOnce(
     );
     if (vr !== "none") thumbsUp = botReactions.find((r) => r.content === vr);
     if (ar !== "none") eyes = botReactions.find((r) => r.content === ar);
+    if (thumbsUp) {
+      thumbsUpTarget = "pr";
+      thumbsUpUrl = prUrl;
+    }
+    if (eyes) eyesUrl = prUrl;
 
-    if (!thumbsUp && vr !== "none") {
+    // Scanned whenever either reaction is enabled -- an ack-only caller
+    // (--verdict-reaction none --ack-reaction eyes) still needs the
+    // trigger comment scanned for its own eyes reaction, not just a
+    // caller waiting on the verdict reaction.
+    if ((!thumbsUp || !eyes) && (vr !== "none" || ar !== "none")) {
       const windowStartMs = sinceMs - effectiveDeadlineMin * 60000;
       const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
         (c) => new Date(c.created_at).getTime() >= windowStartMs
       );
       for (const c of recentComments) {
+        if (thumbsUp && eyes) break;
         const commentReactions = await ghApi(
           `repos/${repo}/issues/comments/${c.id}/reactions`
         );
         const botCommentReactions = (
           Array.isArray(commentReactions) ? commentReactions : []
         ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs);
-        const tu = botCommentReactions.find((r) => r.content === vr);
-        if (tu) {
-          thumbsUp = tu;
-          break;
+        if (!thumbsUp && vr !== "none") {
+          const tu = botCommentReactions.find((r) => r.content === vr);
+          if (tu) {
+            thumbsUp = tu;
+            thumbsUpTarget = "comment";
+            thumbsUpUrl = c.html_url ?? null;
+          }
         }
         if (!eyes && ar !== "none") {
-          eyes = botCommentReactions.find((r) => r.content === ar);
+          const e = botCommentReactions.find((r) => r.content === ar);
+          if (e) {
+            eyes = e;
+            eyesUrl = c.html_url ?? null;
+          }
         }
       }
     }
@@ -307,7 +330,8 @@ export async function pollOnce(
       findings: [],
       counts: EMPTY_COUNTS,
       review_id: null,
-      url: null,
+      url: thumbsUpUrl,
+      reaction_target: thumbsUpTarget,
       verdict_at: thumbsUp.created_at,
       reactions_ignored: reactionsIgnored,
     };
@@ -360,6 +384,7 @@ function buildRecord(status, args, extra, ackAt, checks) {
     counts: extra?.counts ?? EMPTY_COUNTS,
     review_id: extra?.review_id ?? null,
     url: extra?.url ?? null,
+    reaction_target: extra?.reaction_target ?? null,
     since: args.since,
     ack_at: ackAt,
     verdict_at: verdictAt,

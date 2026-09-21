@@ -173,6 +173,8 @@ test("pollOnce: thumbs-up reaction is a clean verdict", async () => {
   assert.equal(result.outcome, "verdict");
   assert.equal(result.form, "reaction");
   assert.equal(result.clean, true);
+  assert.equal(result.reaction_target, "pr");
+  assert.equal(result.url, `https://github.com/${REPO}/pull/${PR}`);
 });
 
 test("pollOnce: eyes reaction is an acknowledgement, not a verdict", async () => {
@@ -195,7 +197,7 @@ test("pollOnce: +1 on a trigger comment (not the PR) is a clean verdict", async 
     if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
     if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
     if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
-      return [{ id: 555, user: { login: "someone" }, created_at: "2026-09-21T12:02:00Z", body: "@codex review" }];
+      return [{ id: 555, user: { login: "someone" }, created_at: "2026-09-21T12:02:00Z", body: "@codex review", html_url: "https://example/issue-comment/555" }];
     }
     if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
     if (endpoint === `repos/${REPO}/issues/comments/555/reactions`) {
@@ -208,6 +210,8 @@ test("pollOnce: +1 on a trigger comment (not the PR) is a clean verdict", async 
   assert.equal(result.form, "reaction");
   assert.equal(result.clean, true);
   assert.equal(result.verdict_at, "2026-09-21T12:03:00Z");
+  assert.equal(result.reaction_target, "comment");
+  assert.equal(result.url, "https://example/issue-comment/555");
 });
 
 test("pollOnce: eyes on a trigger comment is an acknowledgement", async () => {
@@ -267,6 +271,28 @@ test("pollOnce: a +1 on a pre-`since` trigger comment does not count if the reac
   };
   const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE, deadlineMin: 30 }, ghApi, async () => {});
   assert.equal(result.outcome, "none");
+});
+
+test("pollOnce: --verdict-reaction none --ack-reaction eyes still scans the trigger comment for eyes", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
+      return [{ id: 559, user: { login: "someone" }, created_at: "2026-09-21T12:02:00Z", body: "@codex review", html_url: "https://example/issue-comment/559" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    if (endpoint === `repos/${REPO}/issues/comments/559/reactions`) {
+      return [{ content: "eyes", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:02:30Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce(
+    { repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE, verdictReaction: "none", ackReaction: "eyes" },
+    ghApi,
+    async () => {}
+  );
+  assert.equal(result.outcome, "ack");
+  assert.equal(result.ack_at, "2026-09-21T12:02:30Z");
 });
 
 test("resolveReactions: codex defaults to +1/eyes, other bots default to none/none", () => {

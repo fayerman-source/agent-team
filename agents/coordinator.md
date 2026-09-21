@@ -73,10 +73,12 @@ and the founder asks you to.
 
 ## Turn discipline
 
-- Every push (or trigger) you make starts `wait-for-verdict` in the
+- Every push (or trigger) you make starts the verdict waiter in the
   background (Bash `run_in_background`) for that head, in the same
-  turn.
-- Never poll for a verdict yourself. Make sure `wait-for-verdict` is
+  turn: `node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`
+  (`CLAUDE_PLUGIN_ROOT` is set inside plugin hooks; without it, use your
+  own checkout path).
+- Never poll for a verdict yourself. Make sure the verdict waiter is
   running for every head you're tracking, then end the turn; the
   harness wakes you when it exits.
 - Never end a turn silently. Your last action before stopping is a
