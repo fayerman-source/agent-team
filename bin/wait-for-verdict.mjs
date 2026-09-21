@@ -126,9 +126,13 @@ export function parseArgs(argv) {
 // So the commit date is clamped to no more than MAX_SINCE_LOOKBACK_MS
 // before "now" -- generous enough to cover a normal push-to-waiter-
 // start gap, bounded enough that an old commit can't reach back into
-// a previous review cycle. Falls back to (now - 120s) if the commit
-// lookup fails for any reason (network, a head that isn't a real
-// commit, malformed response).
+// a previous review cycle. Also clamped to never be AFTER "now": a
+// future committer timestamp (contributor clock skew, an overridden
+// GIT_COMMITTER_DATE) would otherwise make every real reaction fail
+// the `created_at > since` filter for the entire run, turning a clean
+// reaction verdict into a timeout (codex review, PR #5). Falls back to
+// (now - 120s) if the commit lookup fails for any reason (network, a
+// head that isn't a real commit, malformed response).
 const MAX_SINCE_LOOKBACK_MS = 10 * 60 * 1000;
 
 export async function resolveSince(args, ghApi, now) {
@@ -143,7 +147,7 @@ export async function resolveSince(args, ghApi, now) {
       throw new Error("no usable committer date");
     }
     const committerMs = Date.parse(committerDate);
-    const boundedMs = Math.max(committerMs, nowMs - MAX_SINCE_LOOKBACK_MS);
+    const boundedMs = Math.min(nowMs, Math.max(committerMs, nowMs - MAX_SINCE_LOOKBACK_MS));
     return { since: new Date(boundedMs).toISOString(), sinceSource: "head-commit" };
   } catch {
     return {

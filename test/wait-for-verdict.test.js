@@ -365,6 +365,26 @@ test("resolveSince: clamps a commit date older than the lookback bound to protec
   assert.equal(result.since, "2026-09-21T11:50:00.000Z");
 });
 
+test("resolveSince: clamps a future commit date (clock skew) to the waiter's own start", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/commits/${HEAD}`) {
+      // Committer timestamp after "now" -- contributor clock skew or an
+      // overridden GIT_COMMITTER_DATE. Left unclamped, every real
+      // reaction would fail `created_at > since` for the whole run.
+      return { commit: { committer: { date: "2026-09-21T12:05:00Z" } } };
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const nowIso = "2026-09-21T12:00:00Z";
+  const result = await resolveSince(
+    { repo: REPO, head: HEAD, since: undefined },
+    ghApi,
+    () => new Date(nowIso).getTime()
+  );
+  assert.equal(result.sinceSource, "head-commit");
+  assert.equal(result.since, "2026-09-21T12:00:00.000Z");
+});
+
 test("resolveSince: falls back to (now - 120s) when the commit lookup fails", async () => {
   const ghApi = async () => {
     throw new Error("gh api failed");
