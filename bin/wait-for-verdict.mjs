@@ -108,8 +108,14 @@ export function parsePriority(body) {
   return m ? `P${m[1]}` : null;
 }
 
+function stripMarkup(text) {
+  return text
+    .replace(/<\/?sub>/gi, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+}
+
 export function parseTitle(body) {
-  const text = String(body || "");
+  const text = stripMarkup(String(body || ""));
   const bold = text.match(/\*\*(.+?)\*\*/);
   let title = bold ? bold[1] : text.split("\n")[0];
   title = title.trim();
@@ -203,12 +209,40 @@ export async function pollOnce({ repo, pr, head, bot, since }, ghApi, sleep) {
     };
   }
 
-  // 4. Reactions by the bot, after `since`.
+  // 4. Reactions by the bot, after `since`. Checked at the PR level, and
+  // also on every issue comment created after `since` (reusing the list
+  // already fetched in step 3): when codex is triggered by an
+  // "@codex review" comment, its verdict reaction can land on that
+  // trigger comment instead of on the PR itself.
   const reactions = await ghApi(`repos/${repo}/issues/${pr}/reactions`);
   const botReactions = (Array.isArray(reactions) ? reactions : []).filter(
     (r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs
   );
-  const thumbsUp = botReactions.find((r) => r.content === "+1");
+  let thumbsUp = botReactions.find((r) => r.content === "+1");
+  let eyes = botReactions.find((r) => r.content === "eyes");
+
+  if (!thumbsUp) {
+    const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
+      (c) => new Date(c.created_at).getTime() > sinceMs
+    );
+    for (const c of recentComments) {
+      const commentReactions = await ghApi(
+        `repos/${repo}/issues/comments/${c.id}/reactions`
+      );
+      const botCommentReactions = (
+        Array.isArray(commentReactions) ? commentReactions : []
+      ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs);
+      const tu = botCommentReactions.find((r) => r.content === "+1");
+      if (tu) {
+        thumbsUp = tu;
+        break;
+      }
+      if (!eyes) {
+        eyes = botCommentReactions.find((r) => r.content === "eyes");
+      }
+    }
+  }
+
   if (thumbsUp) {
     return {
       outcome: "verdict",
@@ -221,7 +255,6 @@ export async function pollOnce({ repo, pr, head, bot, since }, ghApi, sleep) {
       verdict_at: thumbsUp.created_at,
     };
   }
-  const eyes = botReactions.find((r) => r.content === "eyes");
   if (eyes) {
     // Acknowledgement only, not a verdict: keep waiting.
     return { outcome: "ack", ack_at: eyes.created_at };

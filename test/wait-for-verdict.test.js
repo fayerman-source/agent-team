@@ -69,6 +69,12 @@ test("parseTitle prefers first bold text, else first line, capped at 120", () =>
   assert.equal(parseTitle(long).length, 120);
 });
 
+test("parseTitle strips <sub> tags and markdown badge images from a real codex body", () => {
+  const body =
+    "<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Load changes outside the current two-week window\nmore detail below";
+  assert.equal(parseTitle(body), "Load changes outside the current two-week window");
+});
+
 test("parseFinding extracts id/priority/title/path/line/original_commit_id", () => {
   const f = parseFinding({
     id: 7,
@@ -181,6 +187,44 @@ test("pollOnce: eyes reaction is an acknowledgement, not a verdict", async () =>
   const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
   assert.equal(result.outcome, "ack");
   assert.equal(result.ack_at, "2026-09-21T12:00:30Z");
+});
+
+test("pollOnce: +1 on a trigger comment (not the PR) is a clean verdict", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
+      return [{ id: 555, user: { login: "someone" }, created_at: "2026-09-21T12:02:00Z", body: "@codex review" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    if (endpoint === `repos/${REPO}/issues/comments/555/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:03:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.form, "reaction");
+  assert.equal(result.clean, true);
+  assert.equal(result.verdict_at, "2026-09-21T12:03:00Z");
+});
+
+test("pollOnce: eyes on a trigger comment is an acknowledgement", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
+      return [{ id: 556, user: { login: "someone" }, created_at: "2026-09-21T12:02:00Z", body: "@codex review" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    if (endpoint === `repos/${REPO}/issues/comments/556/reactions`) {
+      return [{ content: "eyes", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:02:30Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "ack");
+  assert.equal(result.ack_at, "2026-09-21T12:02:30Z");
 });
 
 test("pollOnce: head changed is superseded", async () => {
