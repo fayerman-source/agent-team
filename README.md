@@ -71,12 +71,14 @@ never posts anything to the PR.
 manifest, so start it by its full path, not by a bare name:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
+node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
 ```
 
 `CLAUDE_PLUGIN_ROOT` is set inside plugin hooks, when this repo is
-installed as a plugin; a session without it (a plain checkout) uses its
-own checkout path instead.
+installed as a plugin. A plain-checkout session (not installed as a
+plugin) has no `CLAUDE_PLUGIN_ROOT`, and `$HOME/agent-team` is only a
+guess at where that checkout lives — set `AGENT_TEAM_DIR` to your
+checkout's actual path if it isn't there.
 
 **Stable interface.** Stage 2 will swap this script's internals for a
 webhook/WebSocket feed without changing any of the following: its

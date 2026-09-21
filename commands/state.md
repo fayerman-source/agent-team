@@ -23,7 +23,7 @@ session and echo it as your final text.
    decision, the coordinator's merge, nothing, etc. Use the argument
    above if given. If a review verdict is still pending on your pushed
    head, make sure the verdict waiter is running in the background
-   (start it if not, `node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`)
+   (start it if not, `node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`)
    before you report and stop (rule 6); the harness wakes you when it
    exits.
 6. Send this to the coordinator/reviewer session's address (see the

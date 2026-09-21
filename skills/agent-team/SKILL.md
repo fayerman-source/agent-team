@@ -112,7 +112,7 @@ not a decree.
    `run_in_background`) and end the turn; the harness wakes the session
    when it exits:
    ```
-   node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
+   node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
    ```
    `CLAUDE_PLUGIN_ROOT` is set inside plugin hooks; a session without it
    (a plain checkout, not installed as a plugin) uses its own checkout

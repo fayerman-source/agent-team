@@ -95,7 +95,7 @@ print(json.dumps({
         "`git rev-parse HEAD`, what is done, and what you are waiting on. If a "
         "reviewer verdict is pending on a pushed head, make sure the verdict "
         "waiter is running in the background (start it if not: node "
-        "\"${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs\" "
+        "\"${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs\" "
         "--repo ... --pr ... --head ...), then stop; the harness wakes you "
         "when it exits."
     ),

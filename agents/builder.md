@@ -72,7 +72,7 @@ feature branch and worktree, and you never merge your own PR.
 
 - Every push (or trigger) starts the verdict waiter in the background
   (Bash `run_in_background`) for the pushed head, in the same turn:
-  `node "${CLAUDE_PLUGIN_ROOT:-$HOME/agent-team}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`
+  `node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`
   (`CLAUDE_PLUGIN_ROOT` is set inside plugin hooks; without it, use your
   own checkout path).
 - Never poll for a verdict yourself. Make sure the verdict waiter is

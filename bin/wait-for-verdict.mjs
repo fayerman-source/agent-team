@@ -84,6 +84,12 @@ export function parseArgs(argv) {
   if (!args.repo || !args.pr || !args.head) {
     throw new Error("--repo, --pr, and --head are required");
   }
+  if (!Number.isFinite(args.deadlineMin) || args.deadlineMin <= 0) {
+    throw new Error("--deadline-min must be a finite positive number");
+  }
+  if (!Number.isFinite(args.intervalS) || args.intervalS <= 0) {
+    throw new Error("--interval-s must be a finite positive number");
+  }
   if (!args.since) args.since = new Date().toISOString();
   if (!args.log) {
     args.log =
@@ -104,7 +110,18 @@ export function parseArgs(argv) {
 export function defaultGhApi(endpoint) {
   const res = spawnSync("gh", ["api", "--paginate", endpoint], {
     encoding: "utf8",
+    timeout: 60000,
   });
+  if (res.error || res.signal) {
+    // A stalled DNS/TLS/HTTP call is killed after 60s rather than
+    // hanging the process forever with control never returning to the
+    // loop that enforces --deadline-min; treated as an ordinary
+    // transient failure, same as a non-zero exit, so it counts toward
+    // the 5-consecutive-failures error exit.
+    throw new Error(
+      `gh api ${endpoint} did not complete (${res.signal ?? res.error?.code ?? "timeout"})`
+    );
+  }
   if (res.status !== 0) {
     throw new Error(
       `gh api ${endpoint} failed (${res.status}): ${(res.stderr || "").trim()}`

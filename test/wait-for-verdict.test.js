@@ -502,6 +502,28 @@ test("parseArgs requires --repo --pr --head and applies defaults", () => {
   assert.throws(() => parseArgs(["--repo", REPO]));
 });
 
+test("parseArgs rejects a non-finite --deadline-min", () => {
+  assert.throws(
+    () => parseArgs(["--repo", REPO, "--pr", String(PR), "--head", HEAD, "--deadline-min", "30m"]),
+    /--deadline-min must be a finite positive number/
+  );
+  assert.throws(
+    () => parseArgs(["--repo", REPO, "--pr", String(PR), "--head", HEAD, "--deadline-min", "nope"]),
+    /--deadline-min must be a finite positive number/
+  );
+});
+
+test("parseArgs rejects a non-finite --interval-s", () => {
+  assert.throws(
+    () => parseArgs(["--repo", REPO, "--pr", String(PR), "--head", HEAD, "--interval-s", "30m"]),
+    /--interval-s must be a finite positive number/
+  );
+  assert.throws(
+    () => parseArgs(["--repo", REPO, "--pr", String(PR), "--head", HEAD, "--interval-s", "nope"]),
+    /--interval-s must be a finite positive number/
+  );
+});
+
 test("exitCodeFor maps status to exit code", () => {
   assert.equal(exitCodeFor("verdict"), 0);
   assert.equal(exitCodeFor("timeout"), 2);
