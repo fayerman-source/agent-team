@@ -18,6 +18,22 @@ export const DEFAULT_BOT = "chatgpt-codex-connector[bot]";
 export const DEFAULT_DEADLINE_MIN = 30;
 export const DEFAULT_INTERVAL_S = 45;
 
+// The reaction that counts as a clean verdict, and the one that counts
+// as an acknowledgement-only, are bot-specific (rule 21/5's "bot
+// profile"). Codex's are known; any other bot defaults to "none" for
+// both, meaning reactions are never treated as a verdict for it unless
+// the caller passes --verdict-reaction/--ack-reaction explicitly.
+export function resolveReactions(bot, verdictReaction, ackReaction) {
+  const isCodex = bot === DEFAULT_BOT;
+  const vr = verdictReaction ?? (isCodex ? "+1" : "none");
+  const ar = ackReaction ?? (isCodex ? "eyes" : "none");
+  return {
+    verdictReaction: vr,
+    ackReaction: ar,
+    reactionsIgnored: vr === "none" && ar === "none",
+  };
+}
+
 // ---------------------------------------------------------------------
 // Args
 // ---------------------------------------------------------------------
@@ -55,6 +71,12 @@ export function parseArgs(argv) {
       case "--log":
         args.log = argv[++i];
         break;
+      case "--verdict-reaction":
+        args.verdictReaction = argv[++i];
+        break;
+      case "--ack-reaction":
+        args.ackReaction = argv[++i];
+        break;
       default:
         throw new Error(`unknown argument: ${a}`);
     }
@@ -68,6 +90,10 @@ export function parseArgs(argv) {
       process.env.AGENT_TEAM_VERDICT_LOG ||
       path.join(os.homedir(), ".local", "state", "agent-team", "verdicts.jsonl");
   }
+  const resolved = resolveReactions(args.bot, args.verdictReaction, args.ackReaction);
+  args.verdictReaction = resolved.verdictReaction;
+  args.ackReaction = resolved.ackReaction;
+  args.reactionsIgnored = resolved.reactionsIgnored;
   return args;
 }
 
@@ -151,7 +177,16 @@ const EMPTY_COUNTS = { P1: 0, P2: 0, P3: 0, unrated: 0 };
 // One poll: checks PR head, reviews, issue comments, reactions in order.
 // ---------------------------------------------------------------------
 
-export async function pollOnce({ repo, pr, head, bot, since }, ghApi, sleep) {
+export async function pollOnce(
+  { repo, pr, head, bot, since, verdictReaction, ackReaction },
+  ghApi,
+  sleep
+) {
+  const resolved = resolveReactions(bot, verdictReaction, ackReaction);
+  const vr = resolved.verdictReaction;
+  const ar = resolved.ackReaction;
+  const reactionsIgnored = resolved.reactionsIgnored;
+
   // 1. Superseded?
   const prData = await ghApi(`repos/${repo}/pulls/${pr}`);
   if (prData?.head?.sha !== head) {
@@ -185,6 +220,7 @@ export async function pollOnce({ repo, pr, head, bot, since }, ghApi, sleep) {
       review_id: botReview.id,
       url: botReview.html_url ?? null,
       verdict_at: botReview.submitted_at,
+      reactions_ignored: reactionsIgnored,
     };
   }
 
@@ -206,39 +242,48 @@ export async function pollOnce({ repo, pr, head, bot, since }, ghApi, sleep) {
       review_id: null,
       url: comment.html_url ?? null,
       verdict_at: comment.created_at,
+      reactions_ignored: reactionsIgnored,
     };
   }
 
-  // 4. Reactions by the bot, after `since`. Checked at the PR level, and
-  // also on every issue comment created after `since` (reusing the list
-  // already fetched in step 3): when codex is triggered by an
-  // "@codex review" comment, its verdict reaction can land on that
-  // trigger comment instead of on the PR itself.
-  const reactions = await ghApi(`repos/${repo}/issues/${pr}/reactions`);
-  const botReactions = (Array.isArray(reactions) ? reactions : []).filter(
-    (r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs
-  );
-  let thumbsUp = botReactions.find((r) => r.content === "+1");
-  let eyes = botReactions.find((r) => r.content === "eyes");
+  // 4. Reactions by the bot, after `since`, using the bot's configured
+  // verdict/ack reaction content (rule 21/5's "bot profile" — codex's
+  // are known; any other bot ignores reactions by default unless told
+  // otherwise via --verdict-reaction/--ack-reaction). Checked at the PR
+  // level, and also on every issue comment created after `since`
+  // (reusing the list already fetched in step 3): when codex is
+  // triggered by an "@codex review" comment, its verdict reaction can
+  // land on that trigger comment instead of on the PR itself.
+  let thumbsUp = null;
+  let eyes = null;
 
-  if (!thumbsUp) {
-    const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
-      (c) => new Date(c.created_at).getTime() > sinceMs
+  if (!reactionsIgnored) {
+    const reactions = await ghApi(`repos/${repo}/issues/${pr}/reactions`);
+    const botReactions = (Array.isArray(reactions) ? reactions : []).filter(
+      (r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs
     );
-    for (const c of recentComments) {
-      const commentReactions = await ghApi(
-        `repos/${repo}/issues/comments/${c.id}/reactions`
+    if (vr !== "none") thumbsUp = botReactions.find((r) => r.content === vr);
+    if (ar !== "none") eyes = botReactions.find((r) => r.content === ar);
+
+    if (!thumbsUp && vr !== "none") {
+      const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
+        (c) => new Date(c.created_at).getTime() > sinceMs
       );
-      const botCommentReactions = (
-        Array.isArray(commentReactions) ? commentReactions : []
-      ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs);
-      const tu = botCommentReactions.find((r) => r.content === "+1");
-      if (tu) {
-        thumbsUp = tu;
-        break;
-      }
-      if (!eyes) {
-        eyes = botCommentReactions.find((r) => r.content === "eyes");
+      for (const c of recentComments) {
+        const commentReactions = await ghApi(
+          `repos/${repo}/issues/comments/${c.id}/reactions`
+        );
+        const botCommentReactions = (
+          Array.isArray(commentReactions) ? commentReactions : []
+        ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs);
+        const tu = botCommentReactions.find((r) => r.content === vr);
+        if (tu) {
+          thumbsUp = tu;
+          break;
+        }
+        if (!eyes && ar !== "none") {
+          eyes = botCommentReactions.find((r) => r.content === ar);
+        }
       }
     }
   }
@@ -247,20 +292,21 @@ export async function pollOnce({ repo, pr, head, bot, since }, ghApi, sleep) {
     return {
       outcome: "verdict",
       form: "reaction",
-      clean: true, // founder ruling: a bare 👍 with no review is a clean pass
+      clean: true, // founder ruling: a bare 👍 (or the configured verdict reaction) with no review is a clean pass
       findings: [],
       counts: EMPTY_COUNTS,
       review_id: null,
       url: null,
       verdict_at: thumbsUp.created_at,
+      reactions_ignored: reactionsIgnored,
     };
   }
   if (eyes) {
     // Acknowledgement only, not a verdict: keep waiting.
-    return { outcome: "ack", ack_at: eyes.created_at };
+    return { outcome: "ack", ack_at: eyes.created_at, reactions_ignored: reactionsIgnored };
   }
 
-  return { outcome: "none" };
+  return { outcome: "none", reactions_ignored: reactionsIgnored };
 }
 
 // ---------------------------------------------------------------------
@@ -288,6 +334,9 @@ function buildRecord(status, args, extra, ackAt, checks) {
   const latencyS = verdictAt
     ? (new Date(verdictAt).getTime() - sinceMs) / 1000
     : null;
+  const reactionsIgnored =
+    extra?.reactions_ignored ??
+    resolveReactions(args.bot, args.verdictReaction, args.ackReaction).reactionsIgnored;
   return {
     status,
     repo: args.repo,
@@ -304,6 +353,7 @@ function buildRecord(status, args, extra, ackAt, checks) {
     ack_at: ackAt,
     verdict_at: verdictAt,
     latency_s: latencyS,
+    reactions_ignored: reactionsIgnored,
     checks,
   };
 }

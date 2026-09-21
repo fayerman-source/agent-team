@@ -77,22 +77,35 @@ Args: `--repo owner/name --pr N --head <full sha>` (required); optional
 <ISO>` (default: script start time — start it right after the push or
 trigger), `--deadline-min` (default 30), `--interval-s` (default 45),
 `--log <path>` (default `$AGENT_TEAM_VERDICT_LOG` or
-`~/.local/state/agent-team/verdicts.jsonl`).
+`~/.local/state/agent-team/verdicts.jsonl`), `--verdict-reaction
+<content>` and `--ack-reaction <content>` (which reaction content
+string means a clean verdict, and which means only an acknowledgement —
+part of the bot profile from rule 5/21's brief). Defaults for these two
+depend on `--bot`: for `chatgpt-codex-connector[bot]` (the default bot)
+they default to `+1` and `eyes`; for any other bot they both default to
+`none`, meaning reactions are never read as a verdict for it — only
+review entries and PR comments count — unless you pass these flags
+explicitly. Pass `none` yourself to turn a reaction off even for codex.
 
 Each interval it checks, in order: the PR head sha (a mismatch with
 `--head` means `superseded`), the bot's reviews on that head (`review`
 form; findings carry priority, title, path, line), the bot's issue
 comments since `--since` (`pr-comment` form — the caller must read it,
-it may be a usage-limit notice rather than a verdict), then the bot's
-reactions since `--since` (a bare 👍 is a clean verdict; 👀 is only an
-acknowledgement and polling continues).
+it may be a usage-limit notice rather than a verdict), then — unless
+both reactions are `none` — the bot's reactions since `--since`, at the
+PR level and on every issue comment since `--since` (the bot's trigger
+comment can carry its own reaction): the verdict reaction is a clean
+verdict, the ack reaction is only an acknowledgement and polling
+continues.
 
 Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
 head, bot, form, clean, findings, counts, review_id, url, since,
-ack_at, verdict_at, latency_s, checks}`. Exit codes: `0` verdict, `2`
-timeout, `3` superseded, `1` error. The same JSON object is appended to
-the log file on every exit (including timeout/superseded/error) as the
-measurement record of push-to-verdict latency.
+ack_at, verdict_at, latency_s, reactions_ignored, checks}`.
+`reactions_ignored` is `true` when both reaction flags resolved to
+`none` for this run. Exit codes: `0` verdict, `2` timeout, `3`
+superseded, `1` error. The same JSON object is appended to the log file
+on every exit (including timeout/superseded/error) as the measurement
+record of push-to-verdict latency.
 
 Tests: `node --test` (zero dependencies, the `gh` call is injected).
 

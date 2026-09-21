@@ -14,6 +14,7 @@ import {
   waitForVerdict,
   appendLog,
   exitCodeFor,
+  resolveReactions,
   DEFAULT_BOT,
 } from "../bin/wait-for-verdict.mjs";
 
@@ -225,6 +226,72 @@ test("pollOnce: eyes on a trigger comment is an acknowledgement", async () => {
   const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
   assert.equal(result.outcome, "ack");
   assert.equal(result.ack_at, "2026-09-21T12:02:30Z");
+});
+
+test("resolveReactions: codex defaults to +1/eyes, other bots default to none/none", () => {
+  assert.deepEqual(resolveReactions(DEFAULT_BOT, undefined, undefined), {
+    verdictReaction: "+1",
+    ackReaction: "eyes",
+    reactionsIgnored: false,
+  });
+  assert.deepEqual(resolveReactions("some-other-bot[bot]", undefined, undefined), {
+    verdictReaction: "none",
+    ackReaction: "none",
+    reactionsIgnored: true,
+  });
+});
+
+test("pollOnce: a non-codex bot ignores reactions by default (no verdict, reactions endpoint never called)", async () => {
+  const OTHER_BOT = "some-other-bot[bot]";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint.includes("reactions")) {
+      throw new Error("reactions should be ignored, not queried: " + endpoint);
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: OTHER_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "none");
+  assert.equal(result.reactions_ignored, true);
+});
+
+test("waitForVerdict: a non-codex bot with a +1 (ignored) and no flags times out", async () => {
+  const OTHER_BOT = "some-other-bot[bot]";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    throw new Error("unexpected " + endpoint);
+  };
+  const clock = fakeClock(SINCE);
+  const args = baseArgs({ bot: OTHER_BOT, deadlineMin: 1, intervalS: 45 });
+  const record = await waitForVerdict(args, ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });
+  assert.equal(record.status, "timeout");
+  assert.equal(record.reactions_ignored, true);
+});
+
+test("pollOnce: a non-codex bot with --verdict-reaction hooray reads hooray as a clean verdict", async () => {
+  const OTHER_BOT = "some-other-bot[bot]";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "hooray", user: { login: OTHER_BOT }, created_at: "2026-09-21T12:05:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce(
+    { repo: REPO, pr: PR, head: HEAD, bot: OTHER_BOT, since: SINCE, verdictReaction: "hooray" },
+    ghApi,
+    async () => {}
+  );
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.form, "reaction");
+  assert.equal(result.clean, true);
+  assert.equal(result.reactions_ignored, false);
 });
 
 test("pollOnce: head changed is superseded", async () => {
