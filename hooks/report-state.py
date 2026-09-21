@@ -94,10 +94,12 @@ print(json.dumps({
         "starting with the line 'STATE:' followed by ticket, PR, head sha from "
         "`git rev-parse HEAD`, what is done, and what you are waiting on. If a "
         "reviewer verdict is pending on a pushed head, make sure the verdict "
-        "waiter is running in the background (start it if not: node "
+        "waiter is running in the background (start it if not, as ONE "
+        "shell command with the push -- since defaults to the waiter's own "
+        "start time: git push && node "
         "\"${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs\" "
-        "--repo ... --pr ... --head ...), then stop; the harness wakes you "
-        "when it exits."
+        "--repo ... --pr ... --head \"$(git rev-parse HEAD)\"), then stop; "
+        "the harness wakes you when it exits."
     ),
 }))
 sys.exit(0)

@@ -91,11 +91,14 @@ export function parseArgs(argv) {
   if (!Number.isFinite(args.intervalS) || args.intervalS <= 0) {
     throw new Error("--interval-s must be a finite positive number");
   }
-  if (!args.since) {
-    args.since = new Date().toISOString();
-  } else if (!Number.isFinite(Date.parse(args.since))) {
+  if (args.since !== undefined && !Number.isFinite(Date.parse(args.since))) {
     throw new Error("--since must be a valid timestamp");
   }
+  // No default here: an explicit --since is "arg"; a missing one is
+  // resolved separately (resolveSince), defaulting to the waiter's own
+  // start time -- kept out of parseArgs so resolveSince stays the one
+  // place that decision lives.
+  args.sinceSource = args.since !== undefined ? "arg" : null;
   if (!args.log) {
     args.log =
       process.env.AGENT_TEAM_VERDICT_LOG ||
@@ -106,6 +109,27 @@ export function parseArgs(argv) {
   args.ackReaction = resolved.ackReaction;
   args.reactionsIgnored = resolved.reactionsIgnored;
   return args;
+}
+
+// Tried and reverted twice (codex reviews, PR #5): defaulting `since`
+// to the head commit's own committer date, bounded or not, can still
+// credit a stale reaction. No commit timestamp tells us when THIS head
+// was actually pushed, and a PR-level reaction isn't tied to any one
+// head -- so any cutoff earlier than the waiter's own start can credit
+// an EARLIER head's reaction as a clean verdict for the current one. A
+// false clean is worse than a timeout: the waiter must never look
+// further back than its own start. `since` therefore defaults to the
+// waiter's start time, compared at whole-second precision (GitHub's
+// own timestamps carry none). Closing the real gap this leaves --
+// between the push and the waiter actually starting -- is the
+// invocation's job, not this default's: push (or trigger) and start
+// the waiter as one shell command, so there is no gap for an early
+// reaction to land in.
+export function resolveSince(args, now) {
+  if (args.since !== undefined) {
+    return { since: args.since, sinceSource: "arg" };
+  }
+  return { since: new Date(now()).toISOString(), sinceSource: "start" };
 }
 
 // ---------------------------------------------------------------------
@@ -195,6 +219,24 @@ export function countPriorities(findings) {
 
 const EMPTY_COUNTS = { P1: 0, P2: 0, P3: 0, unrated: 0 };
 
+// GitHub's own timestamps carry no milliseconds; `since` sometimes does
+// (a plain `new Date().toISOString()`), so comparing at millisecond
+// precision can read an event landing in the same whole second as
+// `since` as either side of it depending on where the milliseconds
+// happened to fall. Flooring both sides to the second removes that.
+//
+// The start second itself is EXCLUDED (strict `>`). A whole-second
+// timestamp cannot tell "just before the push" from "just after it",
+// so one side of that second has to lose. Excluding it can only cost a
+// verdict landing in the same second as the push (a timeout, then a
+// re-trigger: recoverable); including it could credit the previous
+// head's 👍 to an unreviewed head (a false clean: not recoverable).
+// Codex has never answered within seconds of a push, so neither case
+// is expected in practice; the rule just picks the safe side.
+function flooredMs(isoString) {
+  return Math.floor(new Date(isoString).getTime() / 1000) * 1000;
+}
+
 // ---------------------------------------------------------------------
 // One poll: checks PR head, reviews, issue comments, reactions in order.
 // ---------------------------------------------------------------------
@@ -256,7 +298,7 @@ export async function pollOnce(
 
   // 3. Issue comments by the bot, after `since`.
   const issueComments = await ghApi(`repos/${repo}/issues/${pr}/comments`);
-  const sinceMs = new Date(since).getTime();
+  const sinceMs = flooredMs(since);
   const botComments = (Array.isArray(issueComments) ? issueComments : [])
     .filter((c) => c.user?.login === bot && new Date(c.created_at).getTime() > sinceMs)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -316,17 +358,23 @@ export async function pollOnce(
     }
     if (eyes) eyesUrl = prUrl;
 
-    // Scanned whenever either reaction is enabled -- an ack-only caller
+    // Scanned whenever either reaction is enabled and no verdict
+    // reaction has been found yet -- an ack-only caller
     // (--verdict-reaction none --ack-reaction eyes) still needs the
     // trigger comment scanned for its own eyes reaction, not just a
-    // caller waiting on the verdict reaction.
-    if ((!thumbsUp || !eyes) && (vr !== "none" || ar !== "none")) {
+    // caller waiting on the verdict reaction. Short-circuited entirely
+    // once thumbsUp is already known (from the PR-level check above, or
+    // set inside this loop): a found verdict reaction is returned
+    // regardless of eyes, so a failing comment-reactions call on a
+    // LATER comment must not turn an already-found verdict into an
+    // `error` outcome.
+    if (!thumbsUp && (vr !== "none" || ar !== "none")) {
       const windowStartMs = sinceMs - effectiveDeadlineMin * 60000;
       const recentComments = (Array.isArray(issueComments) ? issueComments : []).filter(
         (c) => new Date(c.created_at).getTime() >= windowStartMs
       );
       for (const c of recentComments) {
-        if (thumbsUp && eyes) break;
+        if (thumbsUp) break;
         const commentReactions = await ghApi(
           `repos/${repo}/issues/comments/${c.id}/reactions`
         );
@@ -420,6 +468,7 @@ function buildRecord(status, args, extra, ackAt, checks) {
     review_state: extra?.review_state ?? null,
     review_body: extra?.review_body ?? null,
     since: args.since,
+    since_source: args.sinceSource ?? null,
     ack_at: ackAt,
     verdict_at: verdictAt,
     latency_s: latencyS,
@@ -433,17 +482,17 @@ export async function waitForVerdict(args, ghApi, opts = {}) {
   const now = opts.now || (() => new Date());
   const stderr = opts.stderr || ((s) => process.stderr.write(s));
 
-  const deadline = new Date(
-    new Date(args.since).getTime() + args.deadlineMin * 60000
-  );
+  // The deadline is anchored to when THIS run actually started, never
+  // to `since` -- an explicit `--since` may be given as any earlier
+  // time, and anchoring the deadline to it made waitForVerdict time
+  // out on its very first poll (codex review, PR #5).
+  const deadline = new Date(now().getTime() + args.deadlineMin * 60000);
   let ackAt = null;
   let failures = 0;
   const checks = [];
 
-  // A poll always runs before the deadline is checked: --since is set to
-  // when the caller started (e.g. right after the push), which is
-  // typically already in the past by the time this loop gets going, and a
-  // verdict that landed between `since` and process start must still be
+  // A poll always runs before the deadline is checked: a verdict that
+  // landed between `since` and this process's own start must still be
   // seen on the first pass rather than timing out unpolled.
   for (;;) {
     const nowTs = now();
@@ -505,10 +554,22 @@ async function main() {
     process.stderr.write(`wait-for-verdict: ${err.message}\n`);
     process.exit(1);
   }
+  const resolved = resolveSince(args, Date.now);
+  args.since = resolved.since;
+  args.sinceSource = resolved.sinceSource;
   const record = await waitForVerdict(args, defaultGhApi);
   appendLog(args.log, record);
-  process.stdout.write(JSON.stringify(record) + "\n");
-  process.exit(exitCodeFor(record.status));
+  // process.exit() right after write() can cut a large line short when
+  // stdout is a pipe (the write is async under the hood); setting
+  // exitCode and awaiting the write's own callback lets Node flush
+  // before it exits on its own.
+  process.exitCode = exitCodeFor(record.status);
+  await new Promise((resolve, reject) => {
+    process.stdout.write(JSON.stringify(record) + "\n", (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
 // A manually built `file://${process.argv[1]}` string doesn't match

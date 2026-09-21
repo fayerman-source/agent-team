@@ -68,11 +68,19 @@ never posts anything to the PR.
 
 **Invocation.** The file is executable (`#!/usr/bin/env node`, mode
 0755) but is not on `PATH` and isn't exposed through a package
-manifest, so start it by its full path, not by a bare name:
+manifest, so start it by its full path, not by a bare name. Push (or
+post the trigger) and start the waiter as ONE shell command, both in
+the same `run_in_background` call:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
+git push && node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head "$(git rev-parse HEAD)"
 ```
+
+One command, not two, because `--since` defaults to the moment the
+waiter itself starts (give or take a second) — splitting the push and
+the start into separate turns/commands reopens the exact gap this is
+meant to close, where an early bot reaction lands after the push but
+before the waiter's `since` begins.
 
 `CLAUDE_PLUGIN_ROOT` is set inside plugin hooks, when this repo is
 installed as a plugin. A plain-checkout session (not installed as a
@@ -88,20 +96,29 @@ rewrite.
 
 Args: `--repo owner/name --pr N --head <full sha>` (required); optional
 `--bot <login>` (default `chatgpt-codex-connector[bot]`), `--since
-<ISO>` (default: script start time — start it right after the push or
-trigger), `--deadline-min` (default 30), `--interval-s` (default 45),
-`--log <path>` (default `$AGENT_TEAM_VERDICT_LOG` or
-`~/.local/state/agent-team/verdicts.jsonl`), `--verdict-reaction
-<content>` and `--ack-reaction <content>` (which reaction content
-string means a clean verdict, and which means only an acknowledgement —
-part of the bot profile from rule 5/21's brief). Defaults for these two
-depend on `--bot`: for `chatgpt-codex-connector[bot]` (the default bot)
-they default to `+1` and `eyes`; for any other bot they both default to
-`none`, meaning reactions are never read as a verdict for it — only
-review entries and PR comments count — unless you pass these flags
-explicitly. Pass `none` yourself to turn a reaction off even for codex.
-Pass `--since` as the push or trigger time when you have it, rather
-than leaving it at the script's own start time.
+<ISO>` (optional — default is the waiter's own start time, compared at
+whole-second precision since GitHub's own timestamps carry none.
+Deliberately NOT the head commit's committer date, tried and reverted
+twice: no commit timestamp tells us when a head was actually pushed,
+and a PR-level reaction isn't tied to any one head, so any cutoff
+earlier than the waiter's own start could credit an EARLIER head's
+reaction as a false clean for the current one — a false clean is worse
+than a timeout. The real gap this leaves, between the push and the
+waiter actually starting, is closed by the invocation above (one shell
+command), not by this default. The waiter's own timeout deadline is
+always measured from when it actually started, never from `since`),
+`--deadline-min` (default 30), `--interval-s`
+(default 45), `--log <path>` (default
+`$AGENT_TEAM_VERDICT_LOG` or `~/.local/state/agent-team/verdicts.jsonl`),
+`--verdict-reaction <content>` and `--ack-reaction <content>` (which
+reaction content string means a clean verdict, and which means only an
+acknowledgement — part of the bot profile from rule 5/21's brief).
+Defaults for these two depend on `--bot`: for
+`chatgpt-codex-connector[bot]` (the default bot) they default to `+1`
+and `eyes`; for any other bot they both default to `none`, meaning
+reactions are never read as a verdict for it — only review entries and
+PR comments count — unless you pass these flags explicitly. Pass
+`none` yourself to turn a reaction off even for codex.
 
 Each interval it checks, in order: the PR head sha (a mismatch with
 `--head` means `superseded`), the bot's reviews on that head (`review`
@@ -116,15 +133,17 @@ continues.
 
 Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
 head, bot, form, clean, findings, counts, review_id, url,
-reaction_target, review_state, review_body, since, ack_at, verdict_at,
-latency_s, reactions_ignored, checks}`. `reaction_target` is `"pr"` or
-`"comment"` for a `reaction` form (which of the two the reaction
-counted was found on, matching `url`), `null` for every other form.
-`review_state` and `review_body` (first 300 chars, or `null`) are the
-bot review's own state and body for a `review` form, `null` for every
-other form: a `CHANGES_REQUESTED` review with no inline comments still
-reads `clean: false`, since the finding can live in the review body
-rather than as a per-line comment.
+reaction_target, review_state, review_body, since, since_source,
+ack_at, verdict_at, latency_s, reactions_ignored, checks}`.
+`reaction_target` is `"pr"` or `"comment"` for a `reaction` form (which
+of the two the reaction counted was found on, matching `url`), `null`
+for every other form. `review_state` and `review_body` (first 300
+chars, or `null`) are the bot review's own state and body for a
+`review` form, `null` for every other form: a `CHANGES_REQUESTED`
+review with no inline comments still reads `clean: false`, since the
+finding can live in the review body rather than as a per-line comment.
+`since_source` is `"arg"` (an explicit `--since`) or `"start"` (the
+default) — where `since` actually came from.
 `reactions_ignored` is `true` when both reaction flags resolved to
 `none` for this run. Exit codes: `0` verdict, `2` timeout, `3`
 superseded, `1` error. The same JSON object is appended to the log file

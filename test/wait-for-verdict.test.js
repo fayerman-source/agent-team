@@ -15,6 +15,7 @@ import {
   appendLog,
   exitCodeFor,
   resolveReactions,
+  resolveSince,
   DEFAULT_BOT,
 } from "../bin/wait-for-verdict.mjs";
 
@@ -320,6 +321,95 @@ test("pollOnce: --verdict-reaction none --ack-reaction eyes still scans the trig
   assert.equal(result.ack_at, "2026-09-21T12:02:30Z");
 });
 
+test("resolveSince: an explicit --since is used as given", () => {
+  const result = resolveSince({ repo: REPO, head: HEAD, since: SINCE }, () => Date.now());
+  assert.deepEqual(result, { since: SINCE, sinceSource: "arg" });
+});
+
+test("resolveSince: defaults to the waiter's own start time", () => {
+  const nowIso = "2026-09-21T12:00:00Z";
+  const result = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(nowIso).getTime());
+  assert.deepEqual(result, { since: "2026-09-21T12:00:00.000Z", sinceSource: "start" });
+});
+
+test("pollOnce: a PR-level +1 created before the waiter's start is NOT a verdict (an earlier head's reaction must never count)", async () => {
+  // codex review, PR #5: no commit timestamp tells us when THIS head was
+  // pushed, and a PR-level reaction isn't tied to any one head, so a
+  // cutoff earlier than the waiter's own start could credit an earlier
+  // head's reaction as a false clean for the current one.
+  const startTime = "2026-09-21T12:00:00Z";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T11:58:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
+  assert.equal(resolved.sinceSource, "start");
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
+  assert.equal(result.outcome, "none");
+});
+
+test("pollOnce: a PR-level +1 created after the waiter's start is a verdict", async () => {
+  const startTime = "2026-09-21T12:00:00Z";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:00:05Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.form, "reaction");
+  assert.equal(result.clean, true);
+});
+
+test("pollOnce: a +1 created in the waiter's own start second is NOT a verdict (it may be the previous head's; a false clean is worse than a timeout)", async () => {
+  // A whole-second 12:00:00Z reaction may predate a push at 12:00:00.700,
+  // so the start second is excluded (see flooredMs).
+  const startTime = "2026-09-21T12:00:00.700Z";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:00:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
+  assert.notEqual(result.outcome, "verdict");
+});
+
+test("pollOnce: the trigger-comment scan is skipped once a PR-level verdict reaction is found, so a failing comment-reactions call doesn't matter", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) {
+      return [{ id: 700, user: { login: "someone" }, created_at: "2026-09-21T12:02:00Z", body: "@codex review" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:03:00Z" }];
+    }
+    if (endpoint === `repos/${REPO}/issues/comments/700/reactions`) {
+      throw new Error("should not be called: verdict already found at PR level");
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.form, "reaction");
+  assert.equal(result.reaction_target, "pr");
+});
+
 test("resolveReactions: codex defaults to +1/eyes, other bots default to none/none", () => {
   assert.deepEqual(resolveReactions(DEFAULT_BOT, undefined, undefined), {
     verdictReaction: "+1",
@@ -362,6 +452,26 @@ test("waitForVerdict: a non-codex bot with a +1 (ignored) and no flags times out
   const record = await waitForVerdict(args, ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });
   assert.equal(record.status, "timeout");
   assert.equal(record.reactions_ignored, true);
+});
+
+test("waitForVerdict: the deadline is anchored to the run's own start, not an old `since` (codex P1 on PR #5)", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    throw new Error("unexpected " + endpoint);
+  };
+  // `since` is 2 hours before the run actually starts (an explicit
+  // --since an operator passed, in this case). With the deadline
+  // wrongly anchored to `since`, this would time out after exactly one
+  // poll; anchored to the run's own start, it gets the full deadlineMin
+  // from when it actually started.
+  const clock = fakeClock("2026-09-21T12:00:00Z");
+  const args = baseArgs({ since: "2026-09-21T10:00:00Z", deadlineMin: 1, intervalS: 45 });
+  const record = await waitForVerdict(args, ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });
+  assert.equal(record.status, "timeout");
+  assert.ok(record.checks.length > 1, "should have polled more than once before the real deadline");
 });
 
 test("pollOnce: a non-codex bot with --verdict-reaction hooray reads hooray as a clean verdict", async () => {
@@ -522,7 +632,8 @@ test("parseArgs requires --repo --pr --head and applies defaults", () => {
   assert.equal(args.bot, DEFAULT_BOT);
   assert.equal(args.deadlineMin, 30);
   assert.equal(args.intervalS, 45);
-  assert.ok(args.since);
+  assert.equal(args.since, undefined);
+  assert.equal(args.sinceSource, null);
   assert.ok(args.log);
   assert.throws(() => parseArgs(["--repo", REPO]));
 });
