@@ -371,13 +371,9 @@ test("pollOnce: a PR-level +1 created after the waiter's start is a verdict", as
   assert.equal(result.clean, true);
 });
 
-test("pollOnce: a +1 created in the waiter's own start second is a verdict (codex P1 on PR #5: strict > excluded the start second itself)", async () => {
-  // The waiter starts partway through a second (12:00:00.700); GitHub's
-  // whole-second reaction timestamp for the same real moment reads as
-  // 12:00:00Z, which is EARLIER than the literal start instant but in
-  // the same floored second as `since`. A strict `>` filter rejected
-  // this on every poll, timing the waiter out despite a valid verdict
-  // landing right after startup.
+test("pollOnce: a +1 created in the waiter's own start second is NOT a verdict (it may be the previous head's; a false clean is worse than a timeout)", async () => {
+  // A whole-second 12:00:00Z reaction may predate a push at 12:00:00.700,
+  // so the start second is excluded (see flooredMs).
   const startTime = "2026-09-21T12:00:00.700Z";
   const ghApi = async (endpoint) => {
     if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
@@ -390,9 +386,7 @@ test("pollOnce: a +1 created in the waiter's own start second is a verdict (code
   };
   const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
   const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
-  assert.equal(result.outcome, "verdict");
-  assert.equal(result.form, "reaction");
-  assert.equal(result.clean, true);
+  assert.notEqual(result.outcome, "verdict");
 });
 
 test("pollOnce: the trigger-comment scan is skipped once a PR-level verdict reaction is found, so a failing comment-reactions call doesn't matter", async () => {

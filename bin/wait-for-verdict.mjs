@@ -224,6 +224,15 @@ const EMPTY_COUNTS = { P1: 0, P2: 0, P3: 0, unrated: 0 };
 // precision can read an event landing in the same whole second as
 // `since` as either side of it depending on where the milliseconds
 // happened to fall. Flooring both sides to the second removes that.
+//
+// The start second itself is EXCLUDED (strict `>`). A whole-second
+// timestamp cannot tell "just before the push" from "just after it",
+// so one side of that second has to lose. Excluding it can only cost a
+// verdict landing in the same second as the push (a timeout, then a
+// re-trigger: recoverable); including it could credit the previous
+// head's 👍 to an unreviewed head (a false clean: not recoverable).
+// Codex has never answered within seconds of a push, so neither case
+// is expected in practice; the rule just picks the safe side.
 function flooredMs(isoString) {
   return Math.floor(new Date(isoString).getTime() / 1000) * 1000;
 }
@@ -291,7 +300,7 @@ export async function pollOnce(
   const issueComments = await ghApi(`repos/${repo}/issues/${pr}/comments`);
   const sinceMs = flooredMs(since);
   const botComments = (Array.isArray(issueComments) ? issueComments : [])
-    .filter((c) => c.user?.login === bot && new Date(c.created_at).getTime() >= sinceMs)
+    .filter((c) => c.user?.login === bot && new Date(c.created_at).getTime() > sinceMs)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   if (botComments.length > 0) {
     const comment = botComments[0];
@@ -339,7 +348,7 @@ export async function pollOnce(
   if (!reactionsIgnored) {
     const reactions = await ghApi(`repos/${repo}/issues/${pr}/reactions`);
     const botReactions = (Array.isArray(reactions) ? reactions : []).filter(
-      (r) => r.user?.login === bot && new Date(r.created_at).getTime() >= sinceMs
+      (r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs
     );
     if (vr !== "none") thumbsUp = botReactions.find((r) => r.content === vr);
     if (ar !== "none") eyes = botReactions.find((r) => r.content === ar);
@@ -371,7 +380,7 @@ export async function pollOnce(
         );
         const botCommentReactions = (
           Array.isArray(commentReactions) ? commentReactions : []
-        ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() >= sinceMs);
+        ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs);
         if (!thumbsUp && vr !== "none") {
           const tu = botCommentReactions.find((r) => r.content === vr);
           if (tu) {
