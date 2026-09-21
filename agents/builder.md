@@ -29,7 +29,7 @@ feature branch and worktree, and you never merge your own PR.
   `commit_id` equal to the head, a bot comment naming the head sha
   created after the push, or the bot's verdict reaction (as the brief
   names it) created after the push. An acknowledgement reaction is not
-  a verdict: keep polling.
+  a verdict: `wait-for-verdict` keeps waiting.
 - Trigger per head, from the bot profile in the brief. A head the bot
   reviews by itself (usually the PR-opening head; every push for some
   bots): push and watch, and post the trigger once only if nothing
@@ -70,11 +70,15 @@ feature branch and worktree, and you never merge your own PR.
 
 ## Turn discipline
 
-- Every push arms a verdict watch in the same turn.
-- Never end a turn while a review verdict is pending on your pushed
-  head. Wait in repeated shell calls of at most 5 minutes each, with a
-  deadline inside each call, never one unbounded wait: an unbounded
-  wait blocks messages from reaching you.
+- Every push (or trigger) starts the verdict waiter in the background
+  (Bash `run_in_background`) for the pushed head, in the same turn:
+  `node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...`
+  (`CLAUDE_PLUGIN_ROOT` is set inside plugin hooks; without it, use your
+  own checkout path).
+- Never poll for a verdict yourself. Make sure the verdict waiter is
+  running, then end the turn; the harness wakes you when it exits, with
+  its verdict on stdout and in the log. Never sleep-loop, never schedule
+  a wakeup, cron, or `/loop` to check a review instead.
 - Never end a turn silently. Your last action before stopping is a
   state report: `STATE: <ticket> <PR#> <head-sha> done=... waiting=...`.
   The Stop hook in this plugin enforces this.

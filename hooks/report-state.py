@@ -93,8 +93,11 @@ print(json.dumps({
         f"the reviewer session at {reviewer_address} a state report and echo it as your final text, "
         "starting with the line 'STATE:' followed by ticket, PR, head sha from "
         "`git rev-parse HEAD`, what is done, and what you are waiting on. If a "
-        "reviewer verdict is pending on a pushed head, do not stop: keep polling "
-        "inside the turn instead."
+        "reviewer verdict is pending on a pushed head, make sure the verdict "
+        "waiter is running in the background (start it if not: node "
+        "\"${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs\" "
+        "--repo ... --pr ... --head ...), then stop; the harness wakes you "
+        "when it exits."
     ),
 }))
 sys.exit(0)
