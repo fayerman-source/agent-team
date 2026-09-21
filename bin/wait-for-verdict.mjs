@@ -116,23 +116,38 @@ export function parseArgs(argv) {
 // between the push and the waiter actually starting (a real gap: the
 // caller pushes, then starts this in the background, seconds to
 // minutes later). A commit's committer date is always at or before it
-// was pushed, so using it as `since` covers that whole gap instead.
-// Falls back to (now - 120s) if the commit lookup fails for any reason
-// (network, a head that isn't a real commit, malformed response).
+// was pushed, so using it as `since` covers that whole gap instead --
+// BUT a committer date is not itself a push time: a commit made
+// locally well before it was ever pushed (or reused across an amended
+// push) can sit far in the past, which would wrongly credit a bot
+// reaction left on an entirely earlier head/review cycle (codex
+// review, PR #5: a stale `+1` between an old commit date and a much
+// later push could pass the filter as if it reviewed the new head).
+// So the commit date is clamped to no more than MAX_SINCE_LOOKBACK_MS
+// before "now" -- generous enough to cover a normal push-to-waiter-
+// start gap, bounded enough that an old commit can't reach back into
+// a previous review cycle. Falls back to (now - 120s) if the commit
+// lookup fails for any reason (network, a head that isn't a real
+// commit, malformed response).
+const MAX_SINCE_LOOKBACK_MS = 10 * 60 * 1000;
+
 export async function resolveSince(args, ghApi, now) {
   if (args.since !== undefined) {
     return { since: args.since, sinceSource: "arg" };
   }
+  const nowMs = now();
   try {
     const commit = await ghApi(`repos/${args.repo}/commits/${args.head}`);
     const committerDate = commit?.commit?.committer?.date;
     if (!committerDate || !Number.isFinite(Date.parse(committerDate))) {
       throw new Error("no usable committer date");
     }
-    return { since: committerDate, sinceSource: "head-commit" };
+    const committerMs = Date.parse(committerDate);
+    const boundedMs = Math.max(committerMs, nowMs - MAX_SINCE_LOOKBACK_MS);
+    return { since: new Date(boundedMs).toISOString(), sinceSource: "head-commit" };
   } catch {
     return {
-      since: new Date(now() - 120000).toISOString(),
+      since: new Date(nowMs - 120000).toISOString(),
       sinceSource: "fallback",
     };
   }
@@ -479,17 +494,19 @@ export async function waitForVerdict(args, ghApi, opts = {}) {
   const now = opts.now || (() => new Date());
   const stderr = opts.stderr || ((s) => process.stderr.write(s));
 
-  const deadline = new Date(
-    new Date(args.since).getTime() + args.deadlineMin * 60000
-  );
+  // The deadline is anchored to when THIS run actually started, never
+  // to `since` -- `since` can be a commit's committer date (resolveSince),
+  // arbitrarily far in the past for a commit that sat around locally
+  // before being pushed, and anchoring the deadline to it made
+  // waitForVerdict time out on its very first poll (codex review, PR
+  // #5).
+  const deadline = new Date(now().getTime() + args.deadlineMin * 60000);
   let ackAt = null;
   let failures = 0;
   const checks = [];
 
-  // A poll always runs before the deadline is checked: --since is set to
-  // when the caller started (e.g. right after the push), which is
-  // typically already in the past by the time this loop gets going, and a
-  // verdict that landed between `since` and process start must still be
+  // A poll always runs before the deadline is checked: a verdict that
+  // landed between `since` and this process's own start must still be
   // seen on the first pass rather than timing out unpolled.
   for (;;) {
     const nowTs = now();

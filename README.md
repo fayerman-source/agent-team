@@ -92,10 +92,15 @@ Args: `--repo owner/name --pr N --head <full sha>` (required); optional
 fetched from `repos/{repo}/commits/{head}`, not the script's start
 time: a commit's committer date is always at or before it was pushed,
 so this covers the gap between the push and the waiter actually
-starting, which the start time alone would miss. Falls back to `now -
-120s` if that lookup fails. Pass `--since` yourself only when you have
-a more precise time and want to skip the lookup), `--deadline-min`
-(default 30), `--interval-s` (default 45), `--log <path>` (default
+starting, which the start time alone would miss. Clamped to at most 10
+minutes before the waiter's own start, so a commit that sat around
+locally well before being pushed can't reach back far enough to credit
+a bot reaction from an earlier review cycle. Falls back to `now - 120s`
+if the commit lookup fails. Pass `--since` yourself only when you have
+a more precise time and want to skip the lookup; the waiter's own
+timeout deadline is always measured from when it actually started,
+never from `since`), `--deadline-min` (default 30), `--interval-s`
+(default 45), `--log <path>` (default
 `$AGENT_TEAM_VERDICT_LOG` or `~/.local/state/agent-team/verdicts.jsonl`),
 `--verdict-reaction <content>` and `--ack-reaction <content>` (which
 reaction content string means a clean verdict, and which means only an

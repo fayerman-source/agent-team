@@ -336,8 +336,33 @@ test("resolveSince: defaults to the head commit's committer date", async () => {
     }
     throw new Error("unexpected " + endpoint);
   };
-  const result = await resolveSince({ repo: REPO, head: HEAD, since: undefined }, ghApi, () => Date.now());
-  assert.deepEqual(result, { since: "2026-09-21T11:58:00Z", sinceSource: "head-commit" });
+  const result = await resolveSince(
+    { repo: REPO, head: HEAD, since: undefined },
+    ghApi,
+    () => new Date("2026-09-21T12:00:00Z").getTime() // 2 minutes after the commit, well inside the lookback bound
+  );
+  assert.deepEqual(result, { since: "2026-09-21T11:58:00.000Z", sinceSource: "head-commit" });
+});
+
+test("resolveSince: clamps a commit date older than the lookback bound to protect an earlier head/review cycle", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/commits/${HEAD}`) {
+      // Committed an hour before "now" -- far older than the 10-minute
+      // lookback bound, e.g. a commit that sat locally before being
+      // pushed.
+      return { commit: { committer: { date: "2026-09-21T11:00:00Z" } } };
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const nowIso = "2026-09-21T12:00:00Z";
+  const result = await resolveSince(
+    { repo: REPO, head: HEAD, since: undefined },
+    ghApi,
+    () => new Date(nowIso).getTime()
+  );
+  assert.equal(result.sinceSource, "head-commit");
+  // Clamped to (now - 10 minutes), not the hour-old commit date.
+  assert.equal(result.since, "2026-09-21T11:50:00.000Z");
 });
 
 test("resolveSince: falls back to (now - 120s) when the commit lookup fails", async () => {
@@ -448,6 +473,26 @@ test("waitForVerdict: a non-codex bot with a +1 (ignored) and no flags times out
   const record = await waitForVerdict(args, ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });
   assert.equal(record.status, "timeout");
   assert.equal(record.reactions_ignored, true);
+});
+
+test("waitForVerdict: the deadline is anchored to the run's own start, not an old `since` (codex P1 on PR #5)", async () => {
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
+    throw new Error("unexpected " + endpoint);
+  };
+  // `since` is 2 hours before the run actually starts -- as it could be
+  // if resolveSince's head-commit date reached far into the past. With
+  // the deadline wrongly anchored to `since`, this would time out after
+  // exactly one poll; anchored to the run's own start, it gets the full
+  // deadlineMin from when it actually started.
+  const clock = fakeClock("2026-09-21T12:00:00Z");
+  const args = baseArgs({ since: "2026-09-21T10:00:00Z", deadlineMin: 1, intervalS: 45 });
+  const record = await waitForVerdict(args, ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });
+  assert.equal(record.status, "timeout");
+  assert.ok(record.checks.length > 1, "should have polled more than once before the real deadline");
 });
 
 test("pollOnce: a non-codex bot with --verdict-reaction hooray reads hooray as a clean verdict", async () => {
