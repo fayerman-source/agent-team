@@ -321,109 +321,50 @@ test("pollOnce: --verdict-reaction none --ack-reaction eyes still scans the trig
   assert.equal(result.ack_at, "2026-09-21T12:02:30Z");
 });
 
-test("resolveSince: an explicit --since is used as given", async () => {
-  const ghApi = async () => {
-    throw new Error("should not be called");
-  };
-  const result = await resolveSince({ repo: REPO, head: HEAD, since: SINCE }, ghApi, () => Date.now());
+test("resolveSince: an explicit --since is used as given", () => {
+  const result = resolveSince({ repo: REPO, head: HEAD, since: SINCE }, () => Date.now());
   assert.deepEqual(result, { since: SINCE, sinceSource: "arg" });
 });
 
-test("resolveSince: defaults to the head commit's committer date", async () => {
-  const ghApi = async (endpoint) => {
-    if (endpoint === `repos/${REPO}/commits/${HEAD}`) {
-      return { commit: { committer: { date: "2026-09-21T11:58:00Z" } } };
-    }
-    throw new Error("unexpected " + endpoint);
-  };
-  const result = await resolveSince(
-    { repo: REPO, head: HEAD, since: undefined },
-    ghApi,
-    () => new Date("2026-09-21T12:00:00Z").getTime() // 2 minutes after the commit, well inside the lookback bound
-  );
-  assert.deepEqual(result, { since: "2026-09-21T11:58:00.000Z", sinceSource: "head-commit" });
-});
-
-test("resolveSince: clamps a commit date older than the lookback bound to protect an earlier head/review cycle", async () => {
-  const ghApi = async (endpoint) => {
-    if (endpoint === `repos/${REPO}/commits/${HEAD}`) {
-      // Committed an hour before "now" -- far older than the 10-minute
-      // lookback bound, e.g. a commit that sat locally before being
-      // pushed.
-      return { commit: { committer: { date: "2026-09-21T11:00:00Z" } } };
-    }
-    throw new Error("unexpected " + endpoint);
-  };
+test("resolveSince: defaults to the waiter's own start time", () => {
   const nowIso = "2026-09-21T12:00:00Z";
-  const result = await resolveSince(
-    { repo: REPO, head: HEAD, since: undefined },
-    ghApi,
-    () => new Date(nowIso).getTime()
-  );
-  assert.equal(result.sinceSource, "head-commit");
-  // Clamped to (now - 10 minutes), not the hour-old commit date.
-  assert.equal(result.since, "2026-09-21T11:50:00.000Z");
+  const result = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(nowIso).getTime());
+  assert.deepEqual(result, { since: "2026-09-21T12:00:00.000Z", sinceSource: "start" });
 });
 
-test("resolveSince: clamps a future commit date (clock skew) to the waiter's own start", async () => {
+test("pollOnce: a PR-level +1 created before the waiter's start is NOT a verdict (an earlier head's reaction must never count)", async () => {
+  // codex review, PR #5: no commit timestamp tells us when THIS head was
+  // pushed, and a PR-level reaction isn't tied to any one head, so a
+  // cutoff earlier than the waiter's own start could credit an earlier
+  // head's reaction as a false clean for the current one.
+  const startTime = "2026-09-21T12:00:00Z";
   const ghApi = async (endpoint) => {
-    if (endpoint === `repos/${REPO}/commits/${HEAD}`) {
-      // Committer timestamp after "now" -- contributor clock skew or an
-      // overridden GIT_COMMITTER_DATE. Left unclamped, every real
-      // reaction would fail `created_at > since` for the whole run.
-      return { commit: { committer: { date: "2026-09-21T12:05:00Z" } } };
-    }
-    throw new Error("unexpected " + endpoint);
-  };
-  const nowIso = "2026-09-21T12:00:00Z";
-  const result = await resolveSince(
-    { repo: REPO, head: HEAD, since: undefined },
-    ghApi,
-    () => new Date(nowIso).getTime()
-  );
-  assert.equal(result.sinceSource, "head-commit");
-  assert.equal(result.since, "2026-09-21T12:00:00.000Z");
-});
-
-test("resolveSince: falls back to (now - 120s) when the commit lookup fails", async () => {
-  const ghApi = async () => {
-    throw new Error("gh api failed");
-  };
-  const now = () => new Date("2026-09-21T12:05:00Z").getTime();
-  const result = await resolveSince({ repo: REPO, head: HEAD, since: undefined }, ghApi, now);
-  assert.equal(result.sinceSource, "fallback");
-  assert.equal(result.since, "2026-09-21T12:03:00.000Z");
-});
-
-test("resolveSince: falls back when the commit response has no usable committer date", async () => {
-  const ghApi = async () => ({ commit: {} });
-  const now = () => new Date("2026-09-21T12:05:00Z").getTime();
-  const result = await resolveSince({ repo: REPO, head: HEAD, since: undefined }, ghApi, now);
-  assert.equal(result.sinceSource, "fallback");
-});
-
-test("pollOnce: a +1 between the head commit's date and the waiter's start time is found (the missed-early-reaction bug)", async () => {
-  // The bug: defaulting `since` to the waiter's own start time misses a
-  // reaction the bot left between the push (near the commit's own
-  // committer date) and the waiter actually starting, seconds to
-  // minutes later. resolveSince's head-commit default covers that gap.
-  const commitDate = "2026-09-21T11:58:00Z";
-  const startTime = "2026-09-21T12:00:00Z"; // when the waiter would have started
-  const reactionAt = "2026-09-21T11:59:00Z"; // between commit and start -- would be missed by the old default
-  const ghApi = async (endpoint) => {
-    if (endpoint === `repos/${REPO}/commits/${HEAD}`) {
-      return { commit: { committer: { date: commitDate } } };
-    }
     if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
     if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
     if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
     if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
-      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: reactionAt }];
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T11:58:00Z" }];
     }
     throw new Error("unexpected " + endpoint);
   };
-  const resolved = await resolveSince({ repo: REPO, head: HEAD, since: undefined }, ghApi, () => new Date(startTime).getTime());
-  assert.equal(resolved.sinceSource, "head-commit");
+  const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
+  assert.equal(resolved.sinceSource, "start");
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
+  assert.equal(result.outcome, "none");
+});
+
+test("pollOnce: a PR-level +1 created after the waiter's start is a verdict", async () => {
+  const startTime = "2026-09-21T12:00:00Z";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:00:05Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
   const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
   assert.equal(result.outcome, "verdict");
   assert.equal(result.form, "reaction");
@@ -503,11 +444,11 @@ test("waitForVerdict: the deadline is anchored to the run's own start, not an ol
     if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) return [];
     throw new Error("unexpected " + endpoint);
   };
-  // `since` is 2 hours before the run actually starts -- as it could be
-  // if resolveSince's head-commit date reached far into the past. With
-  // the deadline wrongly anchored to `since`, this would time out after
-  // exactly one poll; anchored to the run's own start, it gets the full
-  // deadlineMin from when it actually started.
+  // `since` is 2 hours before the run actually starts (an explicit
+  // --since an operator passed, in this case). With the deadline
+  // wrongly anchored to `since`, this would time out after exactly one
+  // poll; anchored to the run's own start, it gets the full deadlineMin
+  // from when it actually started.
   const clock = fakeClock("2026-09-21T12:00:00Z");
   const args = baseArgs({ since: "2026-09-21T10:00:00Z", deadlineMin: 1, intervalS: 45 });
   const record = await waitForVerdict(args, ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });

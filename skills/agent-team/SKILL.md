@@ -107,16 +107,20 @@ not a decree.
 
 ### Turn discipline
 
-6. **Never poll for a verdict from the model.** After every push (or
-   trigger), start the verdict waiter in the background (Bash
-   `run_in_background`) and end the turn; the harness wakes the session
-   when it exits:
+6. **Never poll for a verdict from the model.** Push (or post the
+   trigger) and start the verdict waiter in the background (Bash
+   `run_in_background`) as ONE shell command, then end the turn; the
+   harness wakes the session when it exits:
    ```
-   node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head ...
+   git push && node "${CLAUDE_PLUGIN_ROOT:-${AGENT_TEAM_DIR:-$HOME/agent-team}}/bin/wait-for-verdict.mjs" --repo ... --pr ... --head "$(git rev-parse HEAD)"
    ```
-   `CLAUDE_PLUGIN_ROOT` is set inside plugin hooks; a session without it
-   (a plain checkout, not installed as a plugin) uses its own checkout
-   path instead. Never poll from the model, never sleep-loop, never
+   One command, not two: `--since` defaults to the moment the waiter
+   itself starts (give or take a second), so a push followed by a
+   separately-started waiter reopens the gap an early bot reaction can
+   land in and be missed. `CLAUDE_PLUGIN_ROOT` is set inside plugin
+   hooks; a session without it (a plain checkout, not installed as a
+   plugin) uses its own checkout path instead. Never poll from the
+   model, never sleep-loop, never
    schedule wakeups, crons, or `/loop` to check a review. Why:
    model-driven polling spent tokens on every empty check; a background
    script costs none and wakes the session exactly once, when there's

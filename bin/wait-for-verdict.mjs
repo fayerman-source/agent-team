@@ -111,50 +111,25 @@ export function parseArgs(argv) {
   return args;
 }
 
-// An explicit --since is used as given. Otherwise, defaulting to the
-// waiter's own start time missed a verdict reaction the bot left
-// between the push and the waiter actually starting (a real gap: the
-// caller pushes, then starts this in the background, seconds to
-// minutes later). A commit's committer date is always at or before it
-// was pushed, so using it as `since` covers that whole gap instead --
-// BUT a committer date is not itself a push time: a commit made
-// locally well before it was ever pushed (or reused across an amended
-// push) can sit far in the past, which would wrongly credit a bot
-// reaction left on an entirely earlier head/review cycle (codex
-// review, PR #5: a stale `+1` between an old commit date and a much
-// later push could pass the filter as if it reviewed the new head).
-// So the commit date is clamped to no more than MAX_SINCE_LOOKBACK_MS
-// before "now" -- generous enough to cover a normal push-to-waiter-
-// start gap, bounded enough that an old commit can't reach back into
-// a previous review cycle. Also clamped to never be AFTER "now": a
-// future committer timestamp (contributor clock skew, an overridden
-// GIT_COMMITTER_DATE) would otherwise make every real reaction fail
-// the `created_at > since` filter for the entire run, turning a clean
-// reaction verdict into a timeout (codex review, PR #5). Falls back to
-// (now - 120s) if the commit lookup fails for any reason (network, a
-// head that isn't a real commit, malformed response).
-const MAX_SINCE_LOOKBACK_MS = 10 * 60 * 1000;
-
-export async function resolveSince(args, ghApi, now) {
+// Tried and reverted twice (codex reviews, PR #5): defaulting `since`
+// to the head commit's own committer date, bounded or not, can still
+// credit a stale reaction. No commit timestamp tells us when THIS head
+// was actually pushed, and a PR-level reaction isn't tied to any one
+// head -- so any cutoff earlier than the waiter's own start can credit
+// an EARLIER head's reaction as a clean verdict for the current one. A
+// false clean is worse than a timeout: the waiter must never look
+// further back than its own start. `since` therefore defaults to the
+// waiter's start time, compared at whole-second precision (GitHub's
+// own timestamps carry none). Closing the real gap this leaves --
+// between the push and the waiter actually starting -- is the
+// invocation's job, not this default's: push (or trigger) and start
+// the waiter as one shell command, so there is no gap for an early
+// reaction to land in.
+export function resolveSince(args, now) {
   if (args.since !== undefined) {
     return { since: args.since, sinceSource: "arg" };
   }
-  const nowMs = now();
-  try {
-    const commit = await ghApi(`repos/${args.repo}/commits/${args.head}`);
-    const committerDate = commit?.commit?.committer?.date;
-    if (!committerDate || !Number.isFinite(Date.parse(committerDate))) {
-      throw new Error("no usable committer date");
-    }
-    const committerMs = Date.parse(committerDate);
-    const boundedMs = Math.min(nowMs, Math.max(committerMs, nowMs - MAX_SINCE_LOOKBACK_MS));
-    return { since: new Date(boundedMs).toISOString(), sinceSource: "head-commit" };
-  } catch {
-    return {
-      since: new Date(nowMs - 120000).toISOString(),
-      sinceSource: "fallback",
-    };
-  }
+  return { since: new Date(now()).toISOString(), sinceSource: "start" };
 }
 
 // ---------------------------------------------------------------------
@@ -572,7 +547,7 @@ async function main() {
     process.stderr.write(`wait-for-verdict: ${err.message}\n`);
     process.exit(1);
   }
-  const resolved = await resolveSince(args, defaultGhApi, Date.now);
+  const resolved = resolveSince(args, Date.now);
   args.since = resolved.since;
   args.sinceSource = resolved.sinceSource;
   const record = await waitForVerdict(args, defaultGhApi);
