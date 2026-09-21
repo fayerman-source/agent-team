@@ -371,6 +371,30 @@ test("pollOnce: a PR-level +1 created after the waiter's start is a verdict", as
   assert.equal(result.clean, true);
 });
 
+test("pollOnce: a +1 created in the waiter's own start second is a verdict (codex P1 on PR #5: strict > excluded the start second itself)", async () => {
+  // The waiter starts partway through a second (12:00:00.700); GitHub's
+  // whole-second reaction timestamp for the same real moment reads as
+  // 12:00:00Z, which is EARLIER than the literal start instant but in
+  // the same floored second as `since`. A strict `>` filter rejected
+  // this on every poll, timing the waiter out despite a valid verdict
+  // landing right after startup.
+  const startTime = "2026-09-21T12:00:00.700Z";
+  const ghApi = async (endpoint) => {
+    if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);
+    if (endpoint === `repos/${REPO}/pulls/${PR}/reviews`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/comments`) return [];
+    if (endpoint === `repos/${REPO}/issues/${PR}/reactions`) {
+      return [{ content: "+1", user: { login: DEFAULT_BOT }, created_at: "2026-09-21T12:00:00Z" }];
+    }
+    throw new Error("unexpected " + endpoint);
+  };
+  const resolved = resolveSince({ repo: REPO, head: HEAD, since: undefined }, () => new Date(startTime).getTime());
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: resolved.since }, ghApi, async () => {});
+  assert.equal(result.outcome, "verdict");
+  assert.equal(result.form, "reaction");
+  assert.equal(result.clean, true);
+});
+
 test("pollOnce: the trigger-comment scan is skipped once a PR-level verdict reaction is found, so a failing comment-reactions call doesn't matter", async () => {
   const ghApi = async (endpoint) => {
     if (endpoint === `repos/${REPO}/pulls/${PR}`) return prHead(HEAD);

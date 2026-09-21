@@ -95,9 +95,9 @@ export function parseArgs(argv) {
     throw new Error("--since must be a valid timestamp");
   }
   // No default here: an explicit --since is "arg"; a missing one is
-  // resolved async, against the head commit's own committer date
-  // (resolveSince), since that needs a network call parseArgs can't
-  // make.
+  // resolved separately (resolveSince), defaulting to the waiter's own
+  // start time -- kept out of parseArgs so resolveSince stays the one
+  // place that decision lives.
   args.sinceSource = args.since !== undefined ? "arg" : null;
   if (!args.log) {
     args.log =
@@ -291,7 +291,7 @@ export async function pollOnce(
   const issueComments = await ghApi(`repos/${repo}/issues/${pr}/comments`);
   const sinceMs = flooredMs(since);
   const botComments = (Array.isArray(issueComments) ? issueComments : [])
-    .filter((c) => c.user?.login === bot && new Date(c.created_at).getTime() > sinceMs)
+    .filter((c) => c.user?.login === bot && new Date(c.created_at).getTime() >= sinceMs)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   if (botComments.length > 0) {
     const comment = botComments[0];
@@ -339,7 +339,7 @@ export async function pollOnce(
   if (!reactionsIgnored) {
     const reactions = await ghApi(`repos/${repo}/issues/${pr}/reactions`);
     const botReactions = (Array.isArray(reactions) ? reactions : []).filter(
-      (r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs
+      (r) => r.user?.login === bot && new Date(r.created_at).getTime() >= sinceMs
     );
     if (vr !== "none") thumbsUp = botReactions.find((r) => r.content === vr);
     if (ar !== "none") eyes = botReactions.find((r) => r.content === ar);
@@ -371,7 +371,7 @@ export async function pollOnce(
         );
         const botCommentReactions = (
           Array.isArray(commentReactions) ? commentReactions : []
-        ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() > sinceMs);
+        ).filter((r) => r.user?.login === bot && new Date(r.created_at).getTime() >= sinceMs);
         if (!thumbsUp && vr !== "none") {
           const tu = botCommentReactions.find((r) => r.content === vr);
           if (tu) {
@@ -474,11 +474,9 @@ export async function waitForVerdict(args, ghApi, opts = {}) {
   const stderr = opts.stderr || ((s) => process.stderr.write(s));
 
   // The deadline is anchored to when THIS run actually started, never
-  // to `since` -- `since` can be a commit's committer date (resolveSince),
-  // arbitrarily far in the past for a commit that sat around locally
-  // before being pushed, and anchoring the deadline to it made
-  // waitForVerdict time out on its very first poll (codex review, PR
-  // #5).
+  // to `since` -- an explicit `--since` may be given as any earlier
+  // time, and anchoring the deadline to it made waitForVerdict time
+  // out on its very first poll (codex review, PR #5).
   const deadline = new Date(now().getTime() + args.deadlineMin * 60000);
   let ackAt = null;
   let failures = 0;
