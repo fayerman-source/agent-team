@@ -244,7 +244,8 @@ function flooredMs(isoString) {
 export async function pollOnce(
   { repo, pr, head, bot, since, verdictReaction, ackReaction, deadlineMin },
   ghApi,
-  sleep
+  sleep,
+  state = {}
 ) {
   const resolved = resolveReactions(bot, verdictReaction, ackReaction);
   const vr = resolved.verdictReaction;
@@ -253,10 +254,33 @@ export async function pollOnce(
   const effectiveDeadlineMin = deadlineMin ?? DEFAULT_DEADLINE_MIN;
 
   // 1. Superseded?
+  // A different PR head is not proof of a newer push: started in the
+  // same command as `git push`, the waiter can read the PR before GitHub
+  // has moved it (#7). Once the PR has shown `head` (`state.headSeen`,
+  // kept across polls by the caller), any later head is a newer push.
+  // Before that, only a PR head that `head` is behind proves one: a
+  // diverged head is equally a newer force-push or the pre-rebase head
+  // of our own force-push GitHub has not registered yet, and a false
+  // superseded loses a review silently where waiting at worst times out.
+  // Compared from the PR head to `head` so the commit list is the few
+  // commits `head` adds, one page either way.
   const prData = await ghApi(`repos/${repo}/pulls/${pr}`);
-  if (prData?.head?.sha !== head) {
-    return { outcome: "superseded" };
+  const prHead = prData?.head?.sha;
+  if (prHead !== head) {
+    if (state.headSeen) return { outcome: "superseded" };
+    let cmp;
+    try {
+      cmp = await ghApi(`repos/${repo}/compare/${prHead}...${head}`);
+    } catch (err) {
+      // Only a 404 means GitHub does not know `head` yet; any other
+      // failure propagates and counts toward the consecutive-failure exit.
+      if (!/HTTP 404/.test(err?.message ?? "")) throw err;
+      return { outcome: "none", reactions_ignored: reactionsIgnored };
+    }
+    if (cmp?.status === "behind") return { outcome: "superseded" };
+    return { outcome: "none", reactions_ignored: reactionsIgnored };
   }
+  state.headSeen = true;
 
   // 2. Reviews on this head, by the bot.
   const reviews = await ghApi(`repos/${repo}/pulls/${pr}/reviews`);
@@ -489,6 +513,8 @@ export async function waitForVerdict(args, ghApi, opts = {}) {
   const deadline = new Date(now().getTime() + args.deadlineMin * 60000);
   let ackAt = null;
   let failures = 0;
+  // #7: whether any poll has seen `head` as the PR head (see pollOnce).
+  const pollState = { headSeen: false };
   const checks = [];
 
   // A poll always runs before the deadline is checked: a verdict that
@@ -498,7 +524,7 @@ export async function waitForVerdict(args, ghApi, opts = {}) {
     const nowTs = now();
     let result;
     try {
-      result = await pollOnce(args, ghApi, sleep);
+      result = await pollOnce(args, ghApi, sleep, pollState);
       failures = 0;
     } catch (err) {
       failures++;

@@ -120,8 +120,7 @@ reactions are never read as a verdict for it — only review entries and
 PR comments count — unless you pass these flags explicitly. Pass
 `none` yourself to turn a reaction off even for codex.
 
-Each interval it checks, in order: the PR head sha (a mismatch with
-`--head` means `superseded`), the bot's reviews on that head (`review`
+Each interval it checks, in order: the PR head sha, the bot's reviews on that head (`review`
 form; findings carry priority, title, path, line), the bot's issue
 comments since `--since` (`pr-comment` form — the caller must read it,
 it may be a usage-limit notice rather than a verdict), then — unless
@@ -130,6 +129,19 @@ PR level and on every issue comment since `--since` (the bot's trigger
 comment can carry its own reaction): the verdict reaction is a clean
 verdict, the ack reaction is only an acknowledgement and polling
 continues.
+
+A PR head that differs from `--head` is not by itself `superseded`
+(#7): started right after `git push`, the waiter can read the PR before
+GitHub has moved it. Once any poll has seen `--head` as the PR head, a
+later different head is `superseded`. Before that, the waiter compares
+the PR head with `--head`: `behind` (the PR head builds on `--head`) is
+`superseded`; `ahead` (GitHub still shows an older head) and `diverged`
+(someone's newer force-push, or the pre-rebase head of our own that
+GitHub has not registered yet) keep polling, as does an HTTP 404 (GitHub
+does not know `--head` yet). Any other compare failure counts toward
+the five-failure `error` exit. A wrong `superseded` loses a review
+silently; waiting too long ends at worst in a visible `timeout`. A
+stage-2 rewrite must keep this.
 
 Output: exactly one JSON line on stdout at exit — `{status, repo, pr,
 head, bot, form, clean, findings, counts, review_id, url,
