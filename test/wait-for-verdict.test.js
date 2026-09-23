@@ -496,13 +496,36 @@ test("pollOnce: a non-codex bot with --verdict-reaction hooray reads hooray as a
   assert.equal(result.reactions_ignored, false);
 });
 
-test("pollOnce: head changed is superseded", async () => {
-  const ghApi = async (endpoint) => {
+// #7: the PR head differs from --head; the compare from the PR head to
+// --head decides whether that is a newer push or GitHub lagging behind ours.
+function headMovedGh(compare) {
+  return async (endpoint) => {
     if (endpoint.endsWith(`/pulls/${PR}`)) return prHead("b".repeat(40));
-    throw new Error("should not call further endpoints once superseded: " + endpoint);
+    if (endpoint.endsWith(`/compare/${"b".repeat(40)}...${HEAD}`)) return compare();
+    throw new Error("should not call further endpoints once the head moved: " + endpoint);
   };
+}
+
+for (const status of ["behind", "diverged"]) {
+  test(`pollOnce: PR head a newer push (${status}) is superseded`, async () => {
+    const ghApi = headMovedGh(() => ({ status }));
+    const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+    assert.equal(result.outcome, "superseded");
+  });
+}
+
+test("pollOnce (#7): PR head not yet moved to our push keeps waiting", async () => {
+  const ghApi = headMovedGh(() => ({ status: "ahead" }));
   const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
-  assert.equal(result.outcome, "superseded");
+  assert.equal(result.outcome, "none");
+});
+
+test("pollOnce (#7): --head unknown to GitHub yet (compare 404) keeps waiting", async () => {
+  const ghApi = headMovedGh(() => {
+    throw new Error("gh api: Not Found (HTTP 404)");
+  });
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "none");
 });
 
 test("pollOnce: pr-comment form, clean is null and body excerpt to 300 chars", async () => {
@@ -586,6 +609,7 @@ test("waitForVerdict + appendLog: a log line is appended on every exit (verdict,
   // superseded
   const supersededGhApi = async (endpoint) => {
     if (endpoint.endsWith(`/pulls/${PR}`)) return prHead("c".repeat(40));
+    if (endpoint.includes("/compare/")) return { status: "behind" };
     throw new Error("should not be called");
   };
   clock = fakeClock(SINCE);

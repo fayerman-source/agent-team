@@ -253,9 +253,26 @@ export async function pollOnce(
   const effectiveDeadlineMin = deadlineMin ?? DEFAULT_DEADLINE_MIN;
 
   // 1. Superseded?
+  // A different PR head is not proof of a newer push: started in the
+  // same command as `git push`, the waiter can read the PR before GitHub
+  // has moved it, and the old head is then `head`'s own parent (#7).
+  // Only a PR head that `head` is behind, or has diverged from (a
+  // force-push), supersedes it. Compared from the PR head to `head` so
+  // the commit list is the few commits `head` adds, one page either way.
   const prData = await ghApi(`repos/${repo}/pulls/${pr}`);
-  if (prData?.head?.sha !== head) {
-    return { outcome: "superseded" };
+  const prHead = prData?.head?.sha;
+  if (prHead !== head) {
+    let cmp;
+    try {
+      cmp = await ghApi(`repos/${repo}/compare/${prHead}...${head}`);
+    } catch {
+      // GitHub does not know `head` yet (404): the push has not landed.
+      return { outcome: "none", reactions_ignored: reactionsIgnored };
+    }
+    if (cmp?.status === "behind" || cmp?.status === "diverged") {
+      return { outcome: "superseded" };
+    }
+    return { outcome: "none", reactions_ignored: reactionsIgnored };
   }
 
   // 2. Reviews on this head, by the bot.
