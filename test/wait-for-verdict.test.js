@@ -506,18 +506,55 @@ function headMovedGh(compare) {
   };
 }
 
-for (const status of ["behind", "diverged"]) {
-  test(`pollOnce: PR head a newer push (${status}) is superseded`, async () => {
+test("pollOnce: PR head a newer push (behind) is superseded", async () => {
+  const ghApi = headMovedGh(() => ({ status: "behind" }));
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
+  assert.equal(result.outcome, "superseded");
+});
+
+// "ahead": GitHub still shows our push's parent. "diverged": the
+// pre-rebase head of our own force-push, or someone else's newer one --
+// ambiguous, so it waits rather than risk losing a review (codex P1, #8).
+for (const status of ["ahead", "diverged"]) {
+  test(`pollOnce (#7): PR head ${status} of ours, never seen ours yet, keeps waiting`, async () => {
     const ghApi = headMovedGh(() => ({ status }));
     const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
-    assert.equal(result.outcome, "superseded");
+    assert.equal(result.outcome, "none");
   });
 }
 
-test("pollOnce (#7): PR head not yet moved to our push keeps waiting", async () => {
-  const ghApi = headMovedGh(() => ({ status: "ahead" }));
-  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {});
-  assert.equal(result.outcome, "none");
+test("pollOnce (#7): any head change after ours was seen is superseded, no compare", async () => {
+  const ghApi = headMovedGh(() => {
+    throw new Error("compare must not be called once our head was seen");
+  });
+  const result = await pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {}, { headSeen: true });
+  assert.equal(result.outcome, "superseded");
+});
+
+test("pollOnce (#7): a compare failure other than 404 propagates (codex P2, #8)", async () => {
+  const ghApi = headMovedGh(() => {
+    throw new Error("gh api compare failed (1): HTTP 401: Bad credentials");
+  });
+  await assert.rejects(
+    pollOnce({ repo: REPO, pr: PR, head: HEAD, bot: DEFAULT_BOT, since: SINCE }, ghApi, async () => {}),
+    /Bad credentials/
+  );
+});
+
+test("waitForVerdict (#7): a force-push GitHub registers late waits, then finds the verdict", async () => {
+  let polls = 0;
+  const ghApi = async (endpoint) => {
+    if (endpoint.endsWith(`/pulls/${PR}`)) return prHead(++polls === 1 ? "b".repeat(40) : HEAD);
+    if (endpoint.includes("/compare/")) return { status: "diverged" };
+    if (endpoint.endsWith("/reviews")) {
+      return [{ id: 7, user: { login: DEFAULT_BOT }, commit_id: HEAD, state: "COMMENTED", submitted_at: "2026-09-21T12:05:00Z", body: "", html_url: "u" }];
+    }
+    if (endpoint.endsWith("/reviews/7/comments")) return [{ id: 1, body: "**P2** x", path: "a" }];
+    throw new Error("unexpected endpoint " + endpoint);
+  };
+  const clock = fakeClock(SINCE);
+  const record = await waitForVerdict(baseArgs({ deadlineMin: 30, intervalS: 1 }), ghApi, { now: clock.now, sleep: clock.sleep, stderr: () => {} });
+  assert.equal(record.status, "verdict");
 });
 
 test("pollOnce (#7): --head unknown to GitHub yet (compare 404) keeps waiting", async () => {
