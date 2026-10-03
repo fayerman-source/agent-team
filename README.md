@@ -26,6 +26,17 @@ It is process only: no domain content, no project code. It ships:
 - an opt-in Stop hook that blocks a team session from ending a turn
   until its last message carries a `STATE:` report
 
+## Quick start
+
+Who it's for: anyone already running two or more Claude Code sessions on one repo.
+
+```
+/plugin marketplace add fayerman-source/agent-team
+/plugin install agent-team@agent-team-marketplace
+```
+
+Then give each session a role (reviewer, coordinator, or builder); see Configuration below for the Stop hook.
+
 ## One cycle, end to end
 
 ```
